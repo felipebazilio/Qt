@@ -699,7 +699,7 @@ TestCase {
     }
 
     function test_mouse() {
-        var control = createTemporaryObject(comboBox, testCase, {model: 3})
+        var control = createTemporaryObject(comboBox, testCase, {model: 3, hoverEnabled: false})
         verify(control)
 
         var activatedSpy = signalSpy.createObject(control, {target: control, signalName: "activated"})
@@ -1466,7 +1466,6 @@ TestCase {
         var control = createTemporaryObject(comboBox, testCase, { model: 1 })
         verify(control)
         compare(control.popup.implicitHeight, 0)
-        compare(control.popup.height, 0)
 
         // Ensure that it's open so that the popup's implicitHeight changes when we increase the model count.
         control.popup.open()

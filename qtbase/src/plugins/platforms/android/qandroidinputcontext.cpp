@@ -303,7 +303,7 @@ static jboolean paste(JNIEnv */*env*/, jobject /*thiz*/)
         return JNI_FALSE;
 
 #ifdef QT_DEBUG_ANDROID_IM_PROTOCOL
-    qDebug("@@@");
+    qDebug("@@@ PASTE");
 #endif
     return m_androidInputContext->paste();
 }
@@ -526,6 +526,10 @@ void QAndroidInputContext::updateCursorPosition()
 
 void QAndroidInputContext::updateSelectionHandles()
 {
+    static bool noHandles = qEnvironmentVariableIntValue("QT_QPA_NO_TEXT_HANDLES");
+    if (noHandles)
+        return;
+
     auto im = qGuiApp->inputMethod();
     if (!m_focusObject || (m_cursorHandleShown == CursorHandleNotShown)) {
         // Hide the handles
@@ -843,11 +847,11 @@ jint QAndroidInputContext::getCursorCapsMode(jint /*reqModes*/)
 
     const uint qtInputMethodHints = query->value(Qt::ImHints).toUInt();
 
-    if (qtInputMethodHints & Qt::ImhPreferUppercase)
-        res = CAP_MODE_SENTENCES;
+    if (!(qtInputMethodHints & Qt::ImhLowercaseOnly) && !(qtInputMethodHints & Qt::ImhNoAutoUppercase))
+        res |= CAP_MODE_SENTENCES;
 
     if (qtInputMethodHints & Qt::ImhUppercaseOnly)
-        res = CAP_MODE_CHARACTERS;
+        res |= CAP_MODE_CHARACTERS;
 
     return res;
 }
@@ -1138,6 +1142,7 @@ jboolean QAndroidInputContext::copyURL()
 
 jboolean QAndroidInputContext::paste()
 {
+    finishComposingText();
     m_cursorHandleShown = CursorHandleNotShown;
     sendShortcut(QKeySequence::Paste);
     return JNI_TRUE;

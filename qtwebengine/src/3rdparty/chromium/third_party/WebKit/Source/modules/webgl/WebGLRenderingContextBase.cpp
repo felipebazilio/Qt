@@ -4630,8 +4630,11 @@ void WebGLRenderingContextBase::texImageHelperDOMArrayBufferView(
     if (sourceType == Tex2D) {
       if (!WebGLImageConversion::extractTextureData(
               width, height, format, type, m_unpackAlignment, m_unpackFlipY,
-              m_unpackPremultiplyAlpha, data, tempData))
+              m_unpackPremultiplyAlpha, data, tempData)) {
+        synthesizeGLError(GL_INVALID_OPERATION, funcName,
+                          "Invalid format/type combination.");
         return;
+      }
       data = tempData.data();
     }
     changeUnpackAlignment = true;
@@ -6300,7 +6303,8 @@ void WebGLRenderingContextBase::DrawingBufferClientRestoreMaskAndClearValues() {
   contextGL()->ClearStencil(m_clearStencil);
 }
 
-void WebGLRenderingContextBase::DrawingBufferClientRestorePixelPackAlignment() {
+void WebGLRenderingContextBase::
+    DrawingBufferClientRestorePixelPackParameters() {
   if (!contextGL())
     return;
   contextGL()->PixelStorei(GL_PACK_ALIGNMENT, m_packAlignment);
@@ -6328,6 +6332,8 @@ void WebGLRenderingContextBase::DrawingBufferClientRestoreFramebufferBinding() {
 
 void WebGLRenderingContextBase::
     DrawingBufferClientRestorePixelUnpackBufferBinding() {}
+void WebGLRenderingContextBase::
+    DrawingBufferClientRestorePixelPackBufferBinding() {}
 
 ScriptValue WebGLRenderingContextBase::getBooleanParameter(
     ScriptState* scriptState,

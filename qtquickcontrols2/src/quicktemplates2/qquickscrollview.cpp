@@ -146,6 +146,8 @@ QQuickScrollViewPrivate::QQuickScrollViewPrivate()
 
 QQuickItem *QQuickScrollViewPrivate::getContentItem()
 {
+    if (!contentItem)
+        executeContentItem();
     return ensureFlickable(false);
 }
 
@@ -205,7 +207,7 @@ bool QQuickScrollViewPrivate::setFlickable(QQuickFlickable *item, bool content)
 void QQuickScrollViewPrivate::updateContentWidth()
 {
     Q_Q(QQuickScrollView);
-    if (!flickable)
+    if (!flickable || !componentComplete)
         return;
 
     const qreal cw = flickable->contentWidth();
@@ -219,7 +221,7 @@ void QQuickScrollViewPrivate::updateContentWidth()
 void QQuickScrollViewPrivate::updateContentHeight()
 {
     Q_Q(QQuickScrollView);
-    if (!flickable)
+    if (!flickable || !componentComplete)
         return;
 
     const qreal ch = flickable->contentHeight();
@@ -551,8 +553,14 @@ void QQuickScrollView::componentComplete()
 {
     Q_D(QQuickScrollView);
     QQuickControl::componentComplete();
-    if (!d->contentItem)
+    if (!d->contentItem) {
         d->ensureFlickable(true);
+    } else {
+        if (d->contentWidth <= 0)
+            d->updateContentWidth();
+        if (d->contentHeight <= 0)
+            d->updateContentHeight();
+    }
 }
 
 void QQuickScrollView::contentItemChange(QQuickItem *newItem, QQuickItem *oldItem)

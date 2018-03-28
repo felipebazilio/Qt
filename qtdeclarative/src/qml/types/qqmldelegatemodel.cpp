@@ -269,7 +269,8 @@ QQmlDelegateModel::~QQmlDelegateModel()
             delete cacheItem->object;
 
             cacheItem->object = 0;
-            cacheItem->contextData->destroy();
+            cacheItem->contextData->invalidate();
+            Q_ASSERT(cacheItem->contextData->refCount == 1);
             cacheItem->contextData = 0;
             cacheItem->scriptRef -= 1;
         }
@@ -840,7 +841,8 @@ void QQDMIncubationTask::statusChanged(Status status)
         delete incubating->object;
         incubating->object = 0;
         if (incubating->contextData) {
-            incubating->contextData->destroy();
+            incubating->contextData->invalidate();
+            Q_ASSERT(incubating->contextData->refCount == 1);
             incubating->contextData = 0;
         }
         incubating->scriptRef = 0;
@@ -900,8 +902,10 @@ void QQmlDelegateModelPrivate::incubatorStatusChanged(QQDMIncubationTask *incuba
         delete cacheItem->object;
         cacheItem->object = 0;
         cacheItem->scriptRef -= 1;
-        if (cacheItem->contextData)
-            cacheItem->contextData->destroy();
+        if (cacheItem->contextData) {
+            cacheItem->contextData->invalidate();
+            Q_ASSERT(cacheItem->contextData->refCount == 1);
+        }
         cacheItem->contextData = 0;
 
         if (!cacheItem->isReferenced()) {
@@ -927,7 +931,7 @@ void QQmlDelegateModelPrivate::setInitialState(QQDMIncubationTask *incubationTas
         emitInitItem(incubationTask, cacheItem->object);
 }
 
-QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, bool asynchronous)
+QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, QQmlIncubator::IncubationMode incubationMode)
 {
     if (!m_delegate || index < 0 || index >= m_compositor.count(group)) {
         qWarning() << "DelegateModel::item: index out range" << index << m_compositor.count(group);
@@ -941,7 +945,7 @@ QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, bo
     QQmlDelegateModelItem *cacheItem = it->inCache() ? m_cache.at(it.cacheIndex) : 0;
 
     if (!cacheItem) {
-        cacheItem = m_adaptorModel.createItem(m_cacheMetaType, m_context->engine(), it.modelIndex());
+        cacheItem = m_adaptorModel.createItem(m_cacheMetaType, it.modelIndex());
         if (!cacheItem)
             return 0;
 
@@ -958,7 +962,8 @@ QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, bo
     cacheItem->referenceObject();
 
     if (cacheItem->incubationTask) {
-        if (!asynchronous && cacheItem->incubationTask->incubationMode() == QQmlIncubator::Asynchronous) {
+        bool sync = (incubationMode == QQmlIncubator::Synchronous || incubationMode == QQmlIncubator::AsynchronousIfNested);
+        if (sync && cacheItem->incubationTask->incubationMode() == QQmlIncubator::Asynchronous) {
             // previously requested async - now needed immediately
             cacheItem->incubationTask->forceCompletion();
         }
@@ -967,7 +972,7 @@ QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, bo
 
         cacheItem->scriptRef += 1;
 
-        cacheItem->incubationTask = new QQDMIncubationTask(this, asynchronous ? QQmlIncubator::Asynchronous : QQmlIncubator::AsynchronousIfNested);
+        cacheItem->incubationTask = new QQDMIncubationTask(this, incubationMode);
         cacheItem->incubationTask->incubating = cacheItem;
         cacheItem->incubationTask->clear();
 
@@ -983,7 +988,7 @@ QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, bo
             if (QQmlAdaptorModelProxyInterface *proxy
                     = qobject_cast<QQmlAdaptorModelProxyInterface *>(cacheItem)) {
                 ctxt = new QQmlContextData;
-                ctxt->setParent(cacheItem->contextData, true);
+                ctxt->setParent(cacheItem->contextData);
                 ctxt->contextObject = proxy->proxiedObject();
             }
         }
@@ -1020,7 +1025,7 @@ QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, bo
   to ensure a reference is held.  Any call to item() which returns a valid item
   must be matched by a call to release() in order to destroy the item.
 */
-QObject *QQmlDelegateModel::object(int index, bool asynchronous)
+QObject *QQmlDelegateModel::object(int index, QQmlIncubator::IncubationMode incubationMode)
 {
     Q_D(QQmlDelegateModel);
     if (!d->m_delegate || index < 0 || index >= d->m_compositor.count(d->m_compositorGroup)) {
@@ -1028,11 +1033,17 @@ QObject *QQmlDelegateModel::object(int index, bool asynchronous)
         return 0;
     }
 
-    QObject *object = d->object(d->m_compositorGroup, index, asynchronous);
-    if (!object)
-        return 0;
+    return d->object(d->m_compositorGroup, index, incubationMode);
+}
 
-    return object;
+QQmlIncubator::Status QQmlDelegateModel::incubationStatus(int index)
+{
+    Q_D(QQmlDelegateModel);
+    Compositor::iterator it = d->m_compositor.find(d->m_compositorGroup, index);
+    if (!it->inCache())
+        return QQmlIncubator::Null;
+
+    return d->m_cache.at(it.cacheIndex)->incubationTask->status();
 }
 
 QString QQmlDelegateModelPrivate::stringValue(Compositor::Group group, int index, const QString &name)
@@ -1262,6 +1273,13 @@ void QQmlDelegateModel::_q_itemsInserted(int index, int count)
     d->emitChanges();
 }
 
+//### This method should be split in two. It will remove delegates, and it will re-render the list.
+// When e.g. QQmlListModel::remove is called, the removal of the delegates should be done on
+// QAbstractItemModel::rowsAboutToBeRemoved, and the re-rendering on
+// QAbstractItemModel::rowsRemoved. Currently both are done on the latter signal. The problem is
+// that the destruction of an item will emit a changed signal that ends up at the delegate, which
+// in turn will try to load the data from the model (which should have already freed it), resulting
+// in a use-after-free. See QTBUG-59256.
 void QQmlDelegateModelPrivate::itemsRemoved(
         const QVector<Compositor::Remove> &removes,
         QVarLengthArray<QVector<QQmlChangeSet::Change>, Compositor::MaximumGroupCount> *translatedRemoves,
@@ -1621,7 +1639,7 @@ bool QQmlDelegateModelPrivate::insert(Compositor::insert_iterator &before, const
     if (!m_context || !m_context->isValid())
         return false;
 
-    QQmlDelegateModelItem *cacheItem = m_adaptorModel.createItem(m_cacheMetaType, m_context->engine(), -1);
+    QQmlDelegateModelItem *cacheItem = m_adaptorModel.createItem(m_cacheMetaType, -1);
     if (!cacheItem)
         return false;
     if (!object.isObject())
@@ -1951,7 +1969,6 @@ void QQmlDelegateModelItem::incubateObject(
     QQmlComponentPrivate *componentPriv = QQmlComponentPrivate::get(component);
 
     incubatorPriv->compilationUnit = componentPriv->compilationUnit;
-    incubatorPriv->compilationUnit->addref();
     incubatorPriv->enginePriv = enginePriv;
     incubatorPriv->creator.reset(new QQmlObjectCreator(context, componentPriv->compilationUnit, componentPriv->creationContext));
     incubatorPriv->subComponentToCreate = componentPriv->start;
@@ -1966,8 +1983,13 @@ void QQmlDelegateModelItem::destroyObject()
 
     QQmlData *data = QQmlData::get(object);
     Q_ASSERT(data);
-    if (data->ownContext && data->context)
-        data->context->clearContext();
+    if (data->ownContext) {
+        data->ownContext->clearContext();
+        if (data->ownContext->contextObject == object)
+            data->ownContext->contextObject = nullptr;
+        data->ownContext = 0;
+        data->context = 0;
+    }
     object->deleteLater();
 
     if (attached) {
@@ -1975,7 +1997,7 @@ void QQmlDelegateModelItem::destroyObject()
         attached = 0;
     }
 
-    contextData->destroy();
+    contextData->invalidate();
     contextData = 0;
     object = 0;
 }
@@ -2472,7 +2494,7 @@ QQmlV4Handle QQmlDelegateModelGroup::get(int index)
 
     if (!cacheItem) {
         cacheItem = model->m_adaptorModel.createItem(
-                model->m_cacheMetaType, model->m_context->engine(), it.modelIndex());
+                model->m_cacheMetaType, it.modelIndex());
         if (!cacheItem)
             return QQmlV4Handle(QV4::Encode::undefined());
         cacheItem->groups = it->flags;
@@ -2643,7 +2665,7 @@ void QQmlDelegateModelGroup::create(QQmlV4Function *args)
         return;
     }
 
-    QObject *object = model->object(group, index, false);
+    QObject *object = model->object(group, index, QQmlIncubator::AsynchronousIfNested);
     if (object) {
         QVector<Compositor::Insert> inserts;
         Compositor::iterator it = model->m_compositor.find(group, index);
@@ -3131,7 +3153,7 @@ bool QQmlPartsModel::isValid() const
     return m_model->isValid();
 }
 
-QObject *QQmlPartsModel::object(int index, bool asynchronous)
+QObject *QQmlPartsModel::object(int index, QQmlIncubator::IncubationMode incubationMode)
 {
     QQmlDelegateModelPrivate *model = QQmlDelegateModelPrivate::get(m_model);
 
@@ -3140,7 +3162,7 @@ QObject *QQmlPartsModel::object(int index, bool asynchronous)
         return 0;
     }
 
-    QObject *object = model->object(m_compositorGroup, index, asynchronous);
+    QObject *object = model->object(m_compositorGroup, index, incubationMode);
 
     if (QQuickPackage *package = qmlobject_cast<QQuickPackage *>(object)) {
         QObject *part = package->part(m_part);
@@ -3188,6 +3210,16 @@ void QQmlPartsModel::setWatchedRoles(const QList<QByteArray> &roles)
     QQmlDelegateModelPrivate *model = QQmlDelegateModelPrivate::get(m_model);
     model->m_adaptorModel.replaceWatchedRoles(m_watchedRoles, roles);
     m_watchedRoles = roles;
+}
+
+QQmlIncubator::Status QQmlPartsModel::incubationStatus(int index)
+{
+    QQmlDelegateModelPrivate *model = QQmlDelegateModelPrivate::get(m_model);
+    Compositor::iterator it = model->m_compositor.find(model->m_compositorGroup, index);
+    if (!it->inCache())
+        return QQmlIncubator::Null;
+
+    return model->m_cache.at(it.cacheIndex)->incubationTask->status();
 }
 
 int QQmlPartsModel::indexOf(QObject *item, QObject *) const

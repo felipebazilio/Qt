@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the QtBluetooth module.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -44,9 +54,14 @@
 #include <QtQml/QQmlContext>
 #include <QDebug>
 #include <QBluetoothLocalDevice>
+#include <QtCore/QLoggingCategory>
+#ifdef Q_OS_ANDROID
+#include <QtAndroidExtras/QtAndroid>
+#endif
 
 int main(int argc, char *argv[])
 {
+    //QLoggingCategory::setFilterRules(QStringLiteral("qt.bluetooth* = true"));
     QGuiApplication application(argc, argv);
 
     QList<QBluetoothHostInfo> infos = QBluetoothLocalDevice::allDevices();
@@ -56,6 +71,19 @@ int main(int argc, char *argv[])
 
     const QString mainQmlApp = QLatin1String("qrc:/chat.qml");
     QQuickView view;
+
+#ifdef Q_OS_ANDROID
+    //workaround for Android's SDP discovery bug (see QTBUG-61392)
+    QString uuid;
+    if (QtAndroid::androidSdkVersion() >= 23)
+        uuid = QStringLiteral("c8e96402-0102-cf9c-274b-701a950fe1e8");
+    else
+        uuid = QStringLiteral("e8e10f95-1a70-4b27-9ccf-02010264e9c8");
+#else
+    const QString uuid(QStringLiteral("e8e10f95-1a70-4b27-9ccf-02010264e9c8"));
+#endif
+
+    view.engine()->rootContext()->setContextProperty(QStringLiteral("targetUuid"), uuid);
     view.setSource(QUrl(mainQmlApp));
     view.setResizeMode(QQuickView::SizeRootObjectToView);
     // Qt.quit() called in embedded .qml by default only emits

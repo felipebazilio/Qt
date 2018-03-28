@@ -69,7 +69,7 @@
 
     \section2 Windows
 
-    On Windows, Visual Studio 2015 and Windows 10 SDK are required.
+    On Windows, Visual Studio 2015 or 2017 and Windows 10 SDK are required.
 
     \section2 Linux
 
@@ -181,5 +181,11 @@
     on Linux.
     It can be re-enabled by setting the \c QTWEBENGINE_ENABLE_LINUX_ACCESSIBILITY environment
     variable to a non-empty value.
+
+    \section1 Popups in Fullscreen Applications on Windows
+    Because of a limitation in the Windows compositor, applications that show a fullscreen web
+    engine view will not properly display popups or other top-level windows. The reason and
+    workaround for the issue can be found at \l {Fullscreen OpenGL Based Windows} and
+    \l {QWindowsWindowFunctions::setHasBorderInFullScreen}.
 
 */

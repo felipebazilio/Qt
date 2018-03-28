@@ -1,12 +1,22 @@
 /****************************************************************************
 **
 ** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -38,15 +48,17 @@
 **
 ****************************************************************************/
 
-#include "urllineedit.h"
 #include "webpage.h"
 #include "webpopupwindow.h"
 #include "webview.h"
+#include <QAction>
 #include <QIcon>
+#include <QLineEdit>
 #include <QVBoxLayout>
 
 WebPopupWindow::WebPopupWindow(QWebEngineProfile *profile)
-    : m_addressBar(new UrlLineEdit(this))
+    : m_urlLineEdit(new QLineEdit(this))
+    , m_favAction(new QAction(this))
     , m_view(new WebView(this))
 {
     setAttribute(Qt::WA_DeleteOnClose);
@@ -55,29 +67,27 @@ WebPopupWindow::WebPopupWindow(QWebEngineProfile *profile)
     QVBoxLayout *layout = new QVBoxLayout;
     layout->setMargin(0);
     setLayout(layout);
-    layout->addWidget(m_addressBar);
+    layout->addWidget(m_urlLineEdit);
     layout->addWidget(m_view);
 
     m_view->setPage(new WebPage(profile, m_view));
     m_view->setFocus();
-    m_addressBar->setReadOnly(true);
-    m_addressBar->setFavIcon(QIcon(QStringLiteral(":defaulticon.png")));
+
+    m_urlLineEdit->setReadOnly(true);
+    m_urlLineEdit->addAction(m_favAction, QLineEdit::LeadingPosition);
 
     connect(m_view, &WebView::titleChanged, this, &QWidget::setWindowTitle);
-    connect(m_view, &WebView::urlChanged, this, &WebPopupWindow::setUrl);
-    connect(m_view->page(), &WebPage::iconChanged, this, &WebPopupWindow::handleIconChanged);
+    connect(m_view, &WebView::urlChanged, [this](const QUrl &url) {
+        m_urlLineEdit->setText(url.toDisplayString());
+    });
+    connect(m_view, &WebView::favIconChanged, m_favAction, &QAction::setIcon);
     connect(m_view->page(), &WebPage::geometryChangeRequested, this, &WebPopupWindow::handleGeometryChangeRequested);
     connect(m_view->page(), &WebPage::windowCloseRequested, this, &QWidget::close);
 }
 
-QWebEngineView *WebPopupWindow::view() const
+WebView *WebPopupWindow::view() const
 {
     return m_view;
-}
-
-void WebPopupWindow::setUrl(const QUrl &url)
-{
-    m_addressBar->setUrl(url);
 }
 
 void WebPopupWindow::handleGeometryChangeRequested(const QRect &newGeometry)
@@ -87,12 +97,5 @@ void WebPopupWindow::handleGeometryChangeRequested(const QRect &newGeometry)
     // let the layout do the magic
     resize(0, 0);
     show();
-}
-
-void WebPopupWindow::handleIconChanged(const QIcon &icon)
-{
-    if (icon.isNull())
-        m_addressBar->setFavIcon(QIcon(QStringLiteral(":defaulticon.png")));
-    else
-        m_addressBar->setFavIcon(icon);
+    m_view->setFocus();
 }

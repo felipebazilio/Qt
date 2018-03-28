@@ -38,6 +38,7 @@
 #include "qquicklabel_p_p.h"
 #include "qquickcontrol_p.h"
 #include "qquickcontrol_p_p.h"
+#include "qquickdeferredexecute_p_p.h"
 
 #include <QtQuick/private/qquickitem_p.h>
 #include <QtQuick/private/qquicktext_p.h>
@@ -155,6 +156,26 @@ QAccessible::Role QQuickLabelPrivate::accessibleRole() const
 }
 #endif
 
+static inline QString backgroundName() { return QStringLiteral("background"); }
+
+void QQuickLabelPrivate::cancelBackground()
+{
+    Q_Q(QQuickLabel);
+    quickCancelDeferred(q, backgroundName());
+}
+
+void QQuickLabelPrivate::executeBackground(bool complete)
+{
+    Q_Q(QQuickLabel);
+    if (background.wasExecuted())
+        return;
+
+    if (!background || complete)
+        quickBeginDeferred(q, backgroundName(), background);
+    if (complete)
+        quickCompleteDeferred(q, backgroundName(), background);
+}
+
 QQuickLabel::QQuickLabel(QQuickItem *parent)
     : QQuickText(*(new QQuickLabelPrivate), parent)
 {
@@ -190,7 +211,9 @@ void QQuickLabel::setFont(const QFont &font)
 */
 QQuickItem *QQuickLabel::background() const
 {
-    Q_D(const QQuickLabel);
+    QQuickLabelPrivate *d = const_cast<QQuickLabelPrivate *>(d_func());
+    if (!d->background)
+        d->executeBackground();
     return d->background;
 }
 
@@ -200,14 +223,18 @@ void QQuickLabel::setBackground(QQuickItem *background)
     if (d->background == background)
         return;
 
-    QQuickControlPrivate::destroyDelegate(d->background, this);
+    if (!d->background.isExecuting())
+        d->cancelBackground();
+
+    delete d->background;
     d->background = background;
     if (background) {
         background->setParentItem(this);
         if (qFuzzyIsNull(background->z()))
             background->setZ(-1);
     }
-    emit backgroundChanged();
+    if (!d->background.isExecuting())
+        emit backgroundChanged();
 }
 
 void QQuickLabel::classBegin()
@@ -220,6 +247,7 @@ void QQuickLabel::classBegin()
 void QQuickLabel::componentComplete()
 {
     Q_D(QQuickLabel);
+    d->executeBackground(true);
     QQuickText::componentComplete();
 #if QT_CONFIG(accessibility)
     if (!d->accessibleAttached && QAccessible::isActive())
@@ -231,7 +259,7 @@ void QQuickLabel::itemChange(QQuickItem::ItemChange change, const QQuickItem::It
 {
     Q_D(QQuickLabel);
     QQuickText::itemChange(change, value);
-    if (change == ItemParentHasChanged && value.item)
+    if ((change == ItemParentHasChanged && value.item) || (change == ItemSceneChange && value.window))
         d->resolveFont();
 }
 

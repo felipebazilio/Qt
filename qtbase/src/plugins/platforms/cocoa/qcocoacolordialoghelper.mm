@@ -37,8 +37,6 @@
 **
 ****************************************************************************/
 
-#ifndef QT_NO_COLORDIALOG
-
 #include <QtCore/qdebug.h>
 #include <QtCore/qtimer.h>
 #include <qpa/qplatformtheme.h>
@@ -51,7 +49,7 @@
 
 QT_USE_NAMESPACE
 
-@interface QT_MANGLE_NAMESPACE(QNSColorPanelDelegate) : NSObject<NSWindowDelegate, QT_MANGLE_NAMESPACE(QNSPanelDelegate)>
+@interface QT_MANGLE_NAMESPACE(QNSColorPanelDelegate) : NSObject<NSWindowDelegate, QNSPanelDelegate>
 {
     @public
     NSColorPanel *mColorPanel;
@@ -424,5 +422,3 @@ QColor QCocoaColorDialogHelper::currentColor() const
 }
 
 QT_END_NAMESPACE
-
-#endif // QT_NO_COLORDIALOG

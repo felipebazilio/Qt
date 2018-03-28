@@ -1,6 +1,7 @@
 #include <mbgl/tile/tile.hpp>
 #include <mbgl/tile/tile_observer.hpp>
-#include <mbgl/renderer/debug_bucket.hpp>
+#include <mbgl/renderer/buckets/debug_bucket.hpp>
+#include <mbgl/renderer/query.hpp>
 #include <mbgl/util/string.hpp>
 #include <mbgl/util/logging.hpp>
 
@@ -17,7 +18,7 @@ void Tile::setObserver(TileObserver* observer_) {
     observer = observer_;
 }
 
-void Tile::setTriedOptional() {
+void Tile::setTriedCache() {
     triedOptional = true;
     observer->onTileChanged(*this);
 }
@@ -32,6 +33,12 @@ void Tile::queryRenderedFeatures(
         std::unordered_map<std::string, std::vector<Feature>>&,
         const GeometryCoordinates&,
         const TransformState&,
-        const optional<std::vector<std::string>>&) {}
+        const std::vector<const RenderLayer*>&,
+        const RenderedQueryOptions&,
+        const CollisionIndex&) {}
+
+void Tile::querySourceFeatures(
+        std::vector<Feature>&,
+        const SourceQueryOptions&) {}
 
 } // namespace mbgl

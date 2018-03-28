@@ -3,7 +3,7 @@
 ** Copyright (C) 2016 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
-** This file is part of the demonstration applications of the Qt Toolkit.
+** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
 ** Commercial License Usage
@@ -341,8 +341,6 @@ WebView::WebView(QWidget* parent)
 
 void WebView::setPage(WebPage *_page)
 {
-    if (m_page)
-        m_page->deleteLater();
     m_page = _page;
     QWebEngineView::setPage(_page);
 #if defined(QWEBENGINEPAGE_STATUSBARMESSAGE)

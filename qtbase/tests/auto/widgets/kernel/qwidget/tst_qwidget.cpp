@@ -72,6 +72,9 @@
 #endif
 
 #include <QtTest/QTest>
+#include <QtTest/private/qtesthelpers_p.h>
+
+using namespace QTestPrivate;
 
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 #  include <QtCore/qt_windows.h>
@@ -107,22 +110,6 @@ bool macHasAccessToWindowsServer()
     return (sessionInfo & sessionHasGraphicAccess);
 }
 #endif
-
-// Make a widget frameless to prevent size constraints of title bars
-// from interfering (Windows).
-static inline void setFrameless(QWidget *w)
-{
-    Qt::WindowFlags flags = w->windowFlags();
-    flags |= Qt::FramelessWindowHint;
-    flags &= ~(Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
-    w->setWindowFlags(flags);
-}
-
-static inline void centerOnScreen(QWidget *w)
-{
-    const QPoint offset = QPoint(w->width() / 2, w->height() / 2);
-    w->move(QGuiApplication::primaryScreen()->availableGeometry().center() - offset);
-}
 
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 static inline void setWindowsAnimationsEnabled(bool enabled)
@@ -1743,8 +1730,6 @@ void tst_QWidget::activation()
 {
     Q_CHECK_PAINTEVENTS
 
-    int waitTime = 100;
-
     QWidget widget1;
     widget1.setObjectName("activation-Widget1");
     widget1.setWindowTitle(widget1.objectName());
@@ -1756,25 +1741,18 @@ void tst_QWidget::activation()
     widget1.show();
     widget2.show();
 
-    QTest::qWait(waitTime);
-    QCOMPARE(QApplication::activeWindow(), &widget2);
+    QTRY_COMPARE(QApplication::activeWindow(), &widget2);
     widget2.showMinimized();
-    QTest::qWait(waitTime);
 
-    QCOMPARE(QApplication::activeWindow(), &widget1);
+    QTRY_COMPARE(QApplication::activeWindow(), &widget1);
     widget2.showMaximized();
-    QTest::qWait(waitTime);
-    QCOMPARE(QApplication::activeWindow(), &widget2);
+    QTRY_COMPARE(QApplication::activeWindow(), &widget2);
     widget2.showMinimized();
-    QTest::qWait(waitTime);
-    QCOMPARE(QApplication::activeWindow(), &widget1);
+    QTRY_COMPARE(QApplication::activeWindow(), &widget1);
     widget2.showNormal();
-    QTest::qWait(waitTime);
-    QTest::qWait(waitTime);
-    QCOMPARE(QApplication::activeWindow(), &widget2);
+    QTRY_COMPARE(QApplication::activeWindow(), &widget2);
     widget2.hide();
-    QTest::qWait(waitTime);
-    QCOMPARE(QApplication::activeWindow(), &widget1);
+    QTRY_COMPARE(QApplication::activeWindow(), &widget1);
 }
 #endif // Q_OS_WIN
 
@@ -4952,8 +4930,7 @@ static QPixmap grabWindow(QWindow *window, int x, int y, int width, int height)
 {
     QScreen *screen = window->screen();
     Q_ASSERT(screen);
-    QPixmap result = screen->grabWindow(window->winId(), x, y, width, height);
-    return result.devicePixelRatio() > 1 ? result.scaled(width, height) : result;
+    return screen->grabWindow(window->winId(), x, y, width, height);
 }
 
 #define VERIFY_COLOR(child, region, color) verifyColor(child, region, color, __LINE__)
@@ -4971,7 +4948,8 @@ bool verifyColor(QWidget &child, const QRegion &region, const QColor &color, uns
             const QPixmap pixmap = grabBackingStore
                 ? child.grab(rect)
                 : grabWindow(window, rect.left(), rect.top(), rect.width(), rect.height());
-            if (!QTest::qCompare(pixmap.size(), rect.size(), "pixmap.size()", "rect.size()", __FILE__, callerLine))
+            const QSize actualSize = pixmap.size() / pixmap.devicePixelRatioF();
+            if (!QTest::qCompare(actualSize, rect.size(), "pixmap.size()", "rect.size()", __FILE__, callerLine))
                 return false;
             QPixmap expectedPixmap(pixmap); /* ensure equal formats */
             expectedPixmap.detach();
@@ -5198,19 +5176,22 @@ void tst_QWidget::multipleToplevelFocusCheck()
     TopLevelFocusCheck w1;
     TopLevelFocusCheck w2;
 
+    const QString title = QLatin1String(QTest::currentTestFunction());
+    w1.setWindowTitle(title + QLatin1String("_W1"));
+    w1.move(m_availableTopLeft + QPoint(20, 20));
     w1.resize(200, 200);
     w1.show();
     QVERIFY(QTest::qWaitForWindowExposed(&w1));
+    w2.setWindowTitle(title + QLatin1String("_W2"));
+    w2.move(w1.frameGeometry().topRight() + QPoint(20, 0));
     w2.resize(200,200);
     w2.show();
     QVERIFY(QTest::qWaitForWindowExposed(&w2));
-    QTest::qWait(50);
 
     QApplication::setActiveWindow(&w1);
     w1.activateWindow();
     QVERIFY(QTest::qWaitForWindowActive(&w1));
     QCOMPARE(QApplication::activeWindow(), static_cast<QWidget *>(&w1));
-    QTest::qWait(50);
     QTest::mouseDClick(&w1, Qt::LeftButton);
     QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget *>(w1.edit));
 
@@ -5716,6 +5697,8 @@ void tst_QWidget::setToolTip()
             QTest::qWait(2200);     // delay is 2000
         QTest::mouseMove(popupWindow);
     }
+
+    QTRY_COMPARE(QApplication::topLevelWidgets().size(), 1);
 }
 
 void tst_QWidget::testWindowIconChangeEventPropagation()
@@ -5753,14 +5736,14 @@ void tst_QWidget::testWindowIconChangeEventPropagation()
     QList <EventSpyPtr> applicationEventSpies;
     QList <EventSpyPtr> widgetEventSpies;
     foreach (QWidget *widget, widgets) {
-        applicationEventSpies.append(EventSpyPtr(new EventSpy<QWidget>(widget, QEvent::ApplicationWindowIconChange)));
-        widgetEventSpies.append(EventSpyPtr(new EventSpy<QWidget>(widget, QEvent::WindowIconChange)));
+        applicationEventSpies.append(EventSpyPtr::create(widget, QEvent::ApplicationWindowIconChange));
+        widgetEventSpies.append(EventSpyPtr::create(widget, QEvent::WindowIconChange));
     }
     QList <WindowEventSpyPtr> appWindowEventSpies;
     QList <WindowEventSpyPtr> windowEventSpies;
     foreach (QWindow *window, windows) {
-        appWindowEventSpies.append(WindowEventSpyPtr(new EventSpy<QWindow>(window, QEvent::ApplicationWindowIconChange)));
-        windowEventSpies.append(WindowEventSpyPtr(new EventSpy<QWindow>(window, QEvent::WindowIconChange)));
+        appWindowEventSpies.append(WindowEventSpyPtr::create(window, QEvent::ApplicationWindowIconChange));
+        windowEventSpies.append(WindowEventSpyPtr::create(window, QEvent::WindowIconChange));
     }
 
     // QApplication::setWindowIcon
@@ -10339,7 +10322,8 @@ public slots:
         QPoint point2(15, 20);
         QPoint point3(20, 20);
         QWindow *window = modal->windowHandle();
-        QWindowSystemInterface::handleEnterEvent(window, point1, window->mapToGlobal(point1));
+        const QPoint nativePoint1 = QHighDpi::toNativePixels(point1, window->screen());
+        QWindowSystemInterface::handleEnterEvent(window, nativePoint1);
         QTest::mouseMove(window, point1);
         QTest::mouseMove(window, point2);
         QTest::mouseMove(window, point3);

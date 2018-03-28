@@ -726,6 +726,19 @@ TestCase {
         compare(control.busy, false)
     }
 
+    function test_pushOnRemoved() {
+        var control = createTemporaryObject(stackView, testCase, { initialItem: component })
+        verify(control)
+
+        var item = control.push(component, StackView.Immediate)
+        verify(item)
+
+        item.StackView.onRemoved.connect(function() { control.push(component, StackView.Immediate) } )
+
+        // don't crash (QTBUG-62153)
+        control.pop(StackView.Immediate)
+    }
+
     Component {
         id: attachedItem
         Item {
@@ -1110,6 +1123,12 @@ TestCase {
         compare(item1.StackView.visible, true)
     }
 
+    function test_resolveInitialItem() {
+        var control = createTemporaryObject(stackView, testCase, {initialItem: "TestItem.qml"})
+        verify(control)
+        verify(control.currentItem)
+    }
+
     function test_resolve() {
         var control = createTemporaryObject(stackView, testCase)
         verify(control)
@@ -1117,5 +1136,27 @@ TestCase {
         var item = control.push("TestItem.qml")
         compare(control.depth, 1)
         verify(item)
+    }
+
+    // QTBUG-65084
+    function test_mouseArea() {
+        var ma = createTemporaryObject(mouseArea, testCase, {width: testCase.width, height: testCase.height})
+        verify(ma)
+
+        var control = stackView.createObject(ma, {width: testCase.width, height: testCase.height})
+        verify(control)
+
+        mousePress(control)
+        verify(ma.pressed)
+
+        mouseRelease(control)
+        verify(!ma.pressed)
+
+        var touch = touchEvent(control)
+        touch.press(0, control).commit()
+        verify(ma.pressed)
+
+        touch.release(0, control).commit()
+        verify(!ma.pressed)
     }
 }

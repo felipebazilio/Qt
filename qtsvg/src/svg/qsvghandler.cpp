@@ -1143,9 +1143,9 @@ static QMatrix parseTransformationMatrix(const QStringRef &value)
         if(state == Matrix) {
             if(points.count() != 6)
                 goto error;
-            matrix = matrix * QMatrix(points[0], points[1],
-                                      points[2], points[3],
-                                      points[4], points[5]);
+            matrix = QMatrix(points[0], points[1],
+                             points[2], points[3],
+                             points[4], points[5]) * matrix;
         } else if (state == Translate) {
             if (points.count() == 1)
                 matrix.translate(points[0], 0);
@@ -2308,7 +2308,6 @@ static bool parseAnimateColorNode(QSvgNode *parent,
                                   const QXmlStreamAttributes &attributes,
                                   QSvgHandler *handler)
 {
-    QString typeStr    = attributes.value(QLatin1String("type")).toString();
     QStringRef fromStr    = attributes.value(QLatin1String("from"));
     QStringRef toStr      = attributes.value(QLatin1String("to"));
     QString valuesStr  = attributes.value(QLatin1String("values")).toString();
@@ -2393,7 +2392,6 @@ static bool parseAnimateTransformNode(QSvgNode *parent,
     QString values     = attributes.value(QLatin1String("values")).toString();
     QString beginStr   = attributes.value(QLatin1String("begin")).toString();
     QString durStr     = attributes.value(QLatin1String("dur")).toString();
-    QString targetStr  = attributes.value(QLatin1String("attributeName")).toString();
     QString repeatStr  = attributes.value(QLatin1String("repeatCount")).toString();
     QString fillStr    = attributes.value(QLatin1String("fill")).toString();
     QString fromStr    = attributes.value(QLatin1String("from")).toString();
@@ -3197,14 +3195,6 @@ static QSvgNode *createSvgNode(QSvgNode *parent,
 {
     Q_UNUSED(parent); Q_UNUSED(attributes);
 
-    QString baseProfile = attributes.value(QLatin1String("baseProfile")).toString();
-#if 0
-    if (baseProfile.isEmpty() && baseProfile != QLatin1String("tiny")) {
-        qCWarning(lcSvgHandler, "Profile is %s while we only support tiny!",
-                 qPrintable(baseProfile));
-    }
-#endif
-
     QSvgTinyDocument *node = new QSvgTinyDocument();
     QString widthStr  = attributes.value(QLatin1String("width")).toString();
     QString heightStr = attributes.value(QLatin1String("height")).toString();
@@ -3348,6 +3338,8 @@ static QSvgNode *createUseNode(QSvgNode *parent,
     if (group) {
         QSvgNode *link = group->scopeNode(linkId);
         if (link) {
+            if (parent->isDescendantOf(link))
+                qCWarning(lcSvgHandler, "link #%s is recursive!", qPrintable(linkId));
             QPointF pt;
             if (!xStr.isNull() || !yStr.isNull()) {
                 QSvgHandler::LengthType type;

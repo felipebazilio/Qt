@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2017 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the Qt Network Auth module of the Qt Toolkit.
@@ -80,7 +80,8 @@ public:
     enum class Stage {
         RequestingTemporaryCredentials,
         RequestingAuthorization,
-        RequestingAccessToken
+        RequestingAccessToken,
+        RefreshingAccessToken
     };
 
     enum class Error {

@@ -225,6 +225,9 @@ void QBluetoothDeviceDiscoveryAgentPrivate::stop()
         return;
 
     if (m_active == SDPScanActive) {
+        if (pendingCancel)
+            return;
+
         pendingCancel = true;
         pendingStart = false;
         bool success = adapter.callMethod<jboolean>("cancelDiscovery");
@@ -304,7 +307,7 @@ void QBluetoothDeviceDiscoveryAgentPrivate::processDiscoveredDevices(
 
     for (int i = 0; i < discoveredDevices.size(); i++) {
         if (discoveredDevices[i].address() == info.address()) {
-            if (discoveredDevices[i] == info) {
+            if (discoveredDevices[i] == info && lowEnergySearchTimeout > 0) {
                 qCDebug(QT_BT_ANDROID) << "Duplicate: " << info.address()
                                        << "isLeScanResult:" << isLeResult;
                 return;

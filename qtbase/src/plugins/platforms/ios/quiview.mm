@@ -43,6 +43,7 @@
 #include "qiosintegration.h"
 #include "qiosviewcontroller.h"
 #include "qiostextresponder.h"
+#include "qiosscreen.h"
 #include "qioswindow.h"
 #ifndef Q_OS_TVOS
 #include "qiosmenu.h"
@@ -54,6 +55,24 @@
 #include <qpa/qwindowsysteminterface_p.h>
 
 @implementation QUIView
+
++ (void)load
+{
+    if (QOperatingSystemVersion::current() < QOperatingSystemVersion(QOperatingSystemVersion::IOS, 11)) {
+        // iOS 11 handles this though [UIView safeAreaInsetsDidChange], but there's no signal for
+        // the corresponding top and bottom layout guides that we use on earlier versions. Note
+        // that we use the _will_ change version of the notification, because we want to react
+        // to the change as early was possible. But since the top and bottom layout guides have
+        // not been updated at this point we use asynchronous delivery of the event, so that the
+        // event is processed by QtGui just after iOS has updated the layout margins.
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillChangeStatusBarFrameNotification
+            object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *) {
+                for (QWindow *window : QGuiApplication::allWindows())
+                    QWindowSystemInterface::handleSafeAreaMarginsChanged<QWindowSystemInterface::AsynchronousDelivery>(window);
+            }
+        ];
+    }
+}
 
 + (Class)layerClass
 {
@@ -99,6 +118,22 @@
             self.layer.borderColor = colorWithBrightness(1.0);
             self.layer.borderWidth = 1.0;
         }
+
+#if QT_DARWIN_PLATFORM_SDK_EQUAL_OR_ABOVE(__MAC_NA, 110000, 110000, __WATCHOS_NA)
+        if (qEnvironmentVariableIsSet("QT_IOS_DEBUG_WINDOW_SAFE_AREAS")) {
+            if (__builtin_available(iOS 11, tvOS 11, *)) {
+                UIView *safeAreaOverlay = [[UIView alloc] initWithFrame:CGRectZero];
+                [safeAreaOverlay setBackgroundColor:[UIColor colorWithRed:0.3 green:0.7 blue:0.9 alpha:0.3]];
+                [self addSubview:safeAreaOverlay];
+
+                safeAreaOverlay.translatesAutoresizingMaskIntoConstraints = NO;
+                [safeAreaOverlay.topAnchor constraintEqualToAnchor:self.safeAreaLayoutGuide.topAnchor].active = YES;
+                [safeAreaOverlay.leftAnchor constraintEqualToAnchor:self.safeAreaLayoutGuide.leftAnchor].active = YES;
+                [safeAreaOverlay.rightAnchor constraintEqualToAnchor:self.safeAreaLayoutGuide.rightAnchor].active = YES;
+                [safeAreaOverlay.bottomAnchor constraintEqualToAnchor:self.safeAreaLayoutGuide.bottomAnchor].active = YES;
+            }
+        }
+#endif
     }
 
     return self;
@@ -165,7 +200,8 @@
             requestedGeometry : qt_window_private(m_qioswindow->window())->geometry;
 
     QWindow *window = m_qioswindow->window();
-    QWindowSystemInterface::handleGeometryChange<QWindowSystemInterface::SynchronousDelivery>(window, actualGeometry, previousGeometry);
+    qCDebug(lcQpaWindow) << m_qioswindow->window() << "new geometry is" << actualGeometry;
+    QWindowSystemInterface::handleGeometryChange(window, actualGeometry, previousGeometry);
 
     if (actualGeometry.size() != previousGeometry.size()) {
         // Trigger expose event on resize
@@ -197,7 +233,13 @@
         region = QRect(QPoint(), bounds);
     }
 
-    QWindowSystemInterface::handleExposeEvent<QWindowSystemInterface::SynchronousDelivery>(m_qioswindow->window(), region);
+    qCDebug(lcQpaWindow) << m_qioswindow->window() << region << "isExposed" << m_qioswindow->isExposed();
+    QWindowSystemInterface::handleExposeEvent(m_qioswindow->window(), region);
+}
+
+- (void)safeAreaInsetsDidChange
+{
+    QWindowSystemInterface::handleSafeAreaMarginsChanged(m_qioswindow->window());
 }
 
 // -------------------------------------------------------------------------
@@ -228,7 +270,7 @@
     }
 
     if (qGuiApp->focusWindow() != m_qioswindow->window())
-        QWindowSystemInterface::handleWindowActivated<QWindowSystemInterface::SynchronousDelivery>(m_qioswindow->window());
+        QWindowSystemInterface::handleWindowActivated(m_qioswindow->window());
     else
         qImDebug() << m_qioswindow->window() << "already active, not sending window activation";
 
@@ -266,7 +308,7 @@
 
     UIResponder *newResponder = FirstResponderCandidate::currentCandidate();
     if ([self responderShouldTriggerWindowDeactivation:newResponder])
-        QWindowSystemInterface::handleWindowActivated<QWindowSystemInterface::SynchronousDelivery>(0);
+        QWindowSystemInterface::handleWindowActivated(0);
 
     return YES;
 }
@@ -357,7 +399,21 @@
 - (void)sendTouchEventWithTimestamp:(ulong)timeStamp
 {
     QIOSIntegration *iosIntegration = QIOSIntegration::instance();
-    QWindowSystemInterface::handleTouchEvent<QWindowSystemInterface::SynchronousDelivery>(m_qioswindow->window(), timeStamp, iosIntegration->touchDevice(), m_activeTouches.values());
+    if (!static_cast<QUIWindow *>(self.window).sendingEvent) {
+        // The event is likely delivered as part of delayed touch delivery, via
+        // _UIGestureEnvironmentSortAndSendDelayedTouches, due to one of the two
+        // _UISystemGestureGateGestureRecognizer instances on the top level window
+        // having its delaysTouchesBegan set to YES. During this delivery, it's not
+        // safe to spin up a recursive event loop, as our calling function is not
+        // reentrant, so any gestures used by the recursive code, e.g. a native
+        // alert dialog, will fail to recognize. To be on the safe side, we deliver
+        // the event asynchronously.
+        QWindowSystemInterface::handleTouchEvent<QWindowSystemInterface::AsynchronousDelivery>(
+            m_qioswindow->window(), timeStamp, iosIntegration->touchDevice(), m_activeTouches.values());
+    } else {
+        QWindowSystemInterface::handleTouchEvent<QWindowSystemInterface::SynchronousDelivery>(
+            m_qioswindow->window(), timeStamp, iosIntegration->touchDevice(), m_activeTouches.values());
+    }
 }
 
 - (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event
@@ -436,7 +492,7 @@
     NSTimeInterval timestamp = event ? event.timestamp : [[NSProcessInfo processInfo] systemUptime];
 
     QIOSIntegration *iosIntegration = static_cast<QIOSIntegration *>(QGuiApplicationPrivate::platformIntegration());
-    QWindowSystemInterface::handleTouchCancelEvent<QWindowSystemInterface::SynchronousDelivery>(m_qioswindow->window(), ulong(timestamp * 1000), iosIntegration->touchDevice());
+    QWindowSystemInterface::handleTouchCancelEvent(m_qioswindow->window(), ulong(timestamp * 1000), iosIntegration->touchDevice());
 }
 
 - (int)mapPressTypeToKey:(UIPress*)press
@@ -464,7 +520,7 @@
         int key = [self mapPressTypeToKey:press];
         if (key == Qt::Key_unknown)
             continue;
-        if (QWindowSystemInterface::handleKeyEvent<QWindowSystemInterface::SynchronousDelivery>(m_qioswindow->window(), type, key, Qt::NoModifier))
+        if (QWindowSystemInterface::handleKeyEvent(m_qioswindow->window(), type, key, Qt::NoModifier))
             handled = true;
     }
 
@@ -541,6 +597,22 @@
         return static_cast<QIOSViewController *>(vc);
 
     return nil;
+}
+
+- (UIEdgeInsets)qt_safeAreaInsets
+{
+#if QT_DARWIN_PLATFORM_SDK_EQUAL_OR_ABOVE(__MAC_NA, 110000, 110000, __WATCHOS_NA)
+    if (__builtin_available(iOS 11, tvOS 11, *))
+        return self.safeAreaInsets;
+#endif
+
+    // Fallback for iOS < 11
+    UIEdgeInsets safeAreaInsets = UIEdgeInsetsZero;
+    CGPoint topInset = [self convertPoint:CGPointMake(0, self.viewController.topLayoutGuide.length) fromView:nil];
+    CGPoint bottomInset = [self convertPoint:CGPointMake(0, self.viewController.bottomLayoutGuide.length) fromView:nil];
+    safeAreaInsets.top = topInset.y;
+    safeAreaInsets.bottom = bottomInset.y;
+    return safeAreaInsets;
 }
 
 @end

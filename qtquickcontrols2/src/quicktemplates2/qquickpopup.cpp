@@ -261,6 +261,8 @@ void QQuickPopupPrivate::init()
     popupItem->setVisible(false);
     q->setParentItem(qobject_cast<QQuickItem *>(parent));
     QObject::connect(popupItem, &QQuickControl::paddingChanged, q, &QQuickPopup::paddingChanged);
+    QObject::connect(popupItem, &QQuickControl::backgroundChanged, q, &QQuickPopup::backgroundChanged);
+    QObject::connect(popupItem, &QQuickControl::contentItemChanged, q, &QQuickPopup::contentItemChanged);
     positioner = new QQuickPopupPositioner(q);
 }
 
@@ -380,16 +382,11 @@ bool QQuickPopupPrivate::handleTouchEvent(QQuickItem *item, QTouchEvent *event)
 {
     switch (event->type()) {
     case QEvent::TouchBegin:
-        for (const QTouchEvent::TouchPoint &point : event->touchPoints()) {
-            if (acceptTouch(point))
-                return handlePress(item, item->mapToScene(point.pos()), event->timestamp());
-        }
-        break;
-
     case QEvent::TouchUpdate:
+    case QEvent::TouchEnd:
         for (const QTouchEvent::TouchPoint &point : event->touchPoints()) {
             if (!acceptTouch(point))
-                continue;
+                return blockInput(item, point.pos());
 
             switch (point.state()) {
             case Qt::TouchPointPressed:
@@ -401,13 +398,6 @@ bool QQuickPopupPrivate::handleTouchEvent(QQuickItem *item, QTouchEvent *event)
             default:
                 break;
             }
-        }
-        break;
-
-    case QEvent::TouchEnd:
-        for (const QTouchEvent::TouchPoint &point : event->touchPoints()) {
-            if (acceptTouch(point))
-                return handleRelease(item, item->mapToScene(point.pos()), event->timestamp());
         }
         break;
 
@@ -482,7 +472,13 @@ void QQuickPopupPrivate::finalizeExitTransition()
     popupItem->setVisible(false);
 
     if (hadActiveFocusBeforeExitTransition && window) {
-        if (!qobject_cast<QQuickPopupItem *>(window->activeFocusItem())) {
+        // restore focus to the next popup in chain, or to the window content if there are no other popups open
+        QQuickPopup *popup = nullptr;
+        if (QQuickOverlay *overlay = QQuickOverlay::overlay(window))
+            popup = QQuickOverlayPrivate::get(overlay)->stackingOrderPopups().value(0);
+        if (popup && popup->hasFocus()) {
+            popup->forceActiveFocus();
+        } else {
             QQuickApplicationWindow *applicationWindow = qobject_cast<QQuickApplicationWindow*>(window);
             if (applicationWindow)
                 applicationWindow->contentItem()->setFocus(true);
@@ -1433,11 +1429,7 @@ QQuickItem *QQuickPopup::background() const
 void QQuickPopup::setBackground(QQuickItem *background)
 {
     Q_D(QQuickPopup);
-    if (d->popupItem->background() == background)
-        return;
-
     d->popupItem->setBackground(background);
-    emit backgroundChanged();
 }
 
 /*!
@@ -1490,6 +1482,9 @@ void QQuickPopup::setContentItem(QQuickItem *item)
 QQmlListProperty<QObject> QQuickPopup::contentData()
 {
     Q_D(QQuickPopup);
+    QQuickControlPrivate *p = QQuickControlPrivate::get(d->popupItem);
+    if (!p->contentItem)
+        p->executeContentItem();
     return QQmlListProperty<QObject>(d->popupItem->contentItem(), nullptr,
                                      QQuickItemPrivate::data_append,
                                      QQuickItemPrivate::data_count,
@@ -1891,6 +1886,9 @@ void QQuickPopup::classBegin()
 {
     Q_D(QQuickPopup);
     d->complete = false;
+    QQmlContext *context = qmlContext(this);
+    if (context)
+        QQmlEngine::setContextForObject(d->popupItem, context);
     d->popupItem->classBegin();
 }
 
@@ -2033,7 +2031,6 @@ void QQuickPopup::contentItemChange(QQuickItem *newItem, QQuickItem *oldItem)
 {
     Q_UNUSED(newItem);
     Q_UNUSED(oldItem);
-    emit contentItemChanged();
 }
 
 void QQuickPopup::fontChange(const QFont &newFont, const QFont &oldFont)

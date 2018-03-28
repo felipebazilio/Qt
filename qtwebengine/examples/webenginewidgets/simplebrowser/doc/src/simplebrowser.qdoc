@@ -1,7 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
@@ -11,8 +11,8 @@
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Free Documentation License Usage
 ** Alternatively, this file may be used under the terms of the GNU Free
@@ -20,7 +20,7 @@
 ** Foundation and appearing in the file included in the packaging of
 ** this file. Please review the following information to ensure
 ** the GNU Free Documentation License version 1.3 requirements
-** will be met: http://www.gnu.org/copyleft/fdl.html.
+** will be met: https://www.gnu.org/licenses/fdl-1.3.html.
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
@@ -43,6 +43,7 @@
             forward in the web page browsing history.
         \li Multi-tab area for displaying web content within tabs.
         \li Status bar for displaying hovered links.
+        \li A simple download manager.
     \endlist
 
     The web content can be opened in new tabs or separate windows. HTTP and
@@ -52,13 +53,13 @@
 
     \section1 Class Hierarchy
 
-    We start with sketching a diagram of the classes that we are going to
+    We start with sketching a diagram of the main classes that we are going to
     implement:
 
     \image simplebrowser-model.png
 
     \list
-        \li \c{Browser} is a singleton class managing the application windows.
+        \li \c{Browser} is a class managing the application windows.
         \li \c{BrowserWindow} is a \l QMainWindow showing the menu, a navigation
             bar, \c {TabWidget}, and a status bar.
         \li \c{TabWidget} is a \l QTabWidget and contains one or multiple
@@ -68,11 +69,19 @@
         \li \c{WebPage} is a \l QWebEnginePage that represents website content.
     \endlist
 
+    Additionally, we will implement some auxiliary classes:
+
+    \list
+        \li \c{WebPopupWindow} is a \l QWidget for showing popup windows.
+        \li \c{DownloadManagerWidget} is a \l QWidget implementing the downloads
+        list.
+    \endlist
+
     \section1 Creating the Browser Main Window
 
-    This example supports multiple main windows that are owned by a
-    \c Browser singleton object. This class could also be used for further
-    functionality, such as downloading files, bookmarks, and history managers.
+    This example supports multiple main windows that are owned by a \c Browser
+    object. This class also owns the \c DownloadManagerWidget and could be used
+    for further functionality, such as bookmarks and history managers.
 
     In \c main.cpp, we create the first \c BrowserWindow instance and add it
     to the \c Browser object. If no arguments are passed on the command line,
@@ -103,6 +112,8 @@
 
     \quotefromfile webenginewidgets/simplebrowser/tabwidget.cpp
     \skipto TabWidget::createTab(
+    \printuntil }
+    \skipto TabWidget::createBackgroundTab(
     \printuntil }
 
     In \c TabWidget::setupView(), we make sure that the \c TabWidget always forwards
@@ -191,9 +202,6 @@
 
     \section1 Implementing WebPage Functionality
 
-    As mentioned earlier, each \c WebView contains a \c WebPage instance that
-    was created by using QWebEngineProfile::defaultProfile().
-
     We implement \c WebPage as a subclass of QWebEnginePage to enable HTTP,
     proxy authentication, and ignoring SSL certificate errors when accessing web
     pages:
@@ -225,20 +233,22 @@
 
     \section1 Opening a Web Page
 
-    This section describes the workflow for opening a new page.
-    When the user enters a URL in the navigation bar and presses \uicontrol Enter,
-    \c QLineEdit::returnPressed is emitted, which lets \c BrowserWindow
-    load the requested page:
+    This section describes the workflow for opening a new page. When the user
+    enters a URL in the navigation bar and presses \uicontrol Enter, the \c
+    QLineEdit::returnPressed signal is emitted and the new URL is then handed
+    over to \c TabWidget::setUrl:
 
     \quotefromfile webenginewidgets/simplebrowser/browserwindow.cpp
+    \skipto BrowserWindow::BrowserWindow
+    \printline BrowserWindow::BrowserWindow
+    \skipto /^\{/
+    \printline /^\{/
+    \dots
     \skipto connect(m_urlLineEdit
     \printuntil });
-
-    The \c loadPage() method calls the \c setUrl() method of \c TabWidget:
-
-    \skipto void BrowserWindow::loadPage(const QUrl
-    \printuntil }
-    \printline }
+    \dots
+    \skipto /^\}/
+    \printline /^\}/
 
     The call is forwarded to the currently selected tab:
 
@@ -249,4 +259,80 @@
 
     The \c setUrl() method of \c WebView just forwards the \c url to the associated \c WebPage,
     which in turn starts the downloading of the page's content in the background.
+
+    \section1 Implementing Private Browsing
+
+    \e{Private browsing}, \e{incognito mode}, or \e{off-the-record mode} is a
+    feature of many browsers where normally persistent data, such as cookies,
+    the HTTP cache, or browsing history, is kept only in memory, leaving no
+    trace on disk. In this example we will implement private browsing on the
+    window level with tabs in one window all in either normal or private mode.
+    Alternatively we could implement private browsing on the tab-level, with
+    some tabs in a window in normal mode, others in private mode.
+
+    Implementing private browsing is quite easy using Qt WebEngine. All one has
+    to do is to create a new \l{QWebEngineProfile} and use it in the
+    \l{QWebEnginePage} instead of the default profile. In the example this new
+    profile is created and owned by the \c Browser object:
+
+    \quotefromfile webenginewidgets/simplebrowser/browser.h
+    \skipto /^class Browser$/
+    \printuntil public:
+    \dots
+    \skipto createWindow
+    \printline createWindow
+    \skipto private:
+    \printline private:
+    \dots
+    \skipto m_otrProfile
+    \printline m_otrProfile
+    \printline /^\};$/
+
+    The default constructor for \l{QWebEngineProfile} already puts it in
+    \e{off-the-record} mode. All that is left to do is to pass the appropriate
+    profile down to the appropriate \l QWebEnginePage objects. The \c Browser
+    object will hand to each new \c BrowserWindow either the global default
+    profile (see \l{QWebEngineProfile::defaultProfile}) or its own
+    off-the-record profile:
+
+    \quotefromfile webenginewidgets/simplebrowser/browser.cpp
+    \skipto Browser::createWindow
+    \printuntil mainWindow = new BrowserWindow
+    \skipto return mainWindow
+    \printuntil /^\}/
+
+    The \c BrowserWindow and \c TabWidget objects will then ensure that all \l
+    QWebEnginePage objects contained in a window will use this profile.
+
+    \section1 Managing Downloads
+
+    Downloads are associated with a \l QWebEngineProfile. Whenever a download is
+    triggered on a web page the \l QWebEngineProfile::downloadRequested signal is
+    emitted with a \l QWebEngineDownloadItem, which in this example is forwarded
+    to \c DownloadManagerWidget::downloadRequested:
+
+    \quotefromfile webenginewidgets/simplebrowser/browser.cpp
+    \skipto Browser::Browser
+    \printuntil /^\}/
+
+    This method prompts the user for a file name (with a pre-filled suggestion)
+    and starts the download (unless the user cancels the \uicontrol {Save As}
+    dialog):
+
+    \quotefromfile webenginewidgets/simplebrowser/downloadmanagerwidget.cpp
+    \skipto DownloadManagerWidget::downloadRequested
+    \printuntil /^\}/
+
+    The \l QWebEngineDownloadItem object will periodically emit the \l
+    {QWebEngineDownloadItem::}{downloadProgress} signal to notify potential
+    observers of the download progress and the \l
+    {QWebEngineDownloadItem::}{stateChanged} signal when the download is
+    finished or when an error occurs. See \c downloadmanagerwidget.cpp for an
+    example of how these signals can be handled.
+
+    \section1 Licensing
+
+    All icons used in the example, with the exception of \c{AppLogoColor.png},
+    originate from the public domain
+    \l{http://tango.freedesktop.org/Tango_Icon_Library}{Tango Icon Library}.
 */

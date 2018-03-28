@@ -245,6 +245,8 @@ void QBluetoothDeviceDiscoveryAgentPrivate::startClassic()
     Q_ASSERT(requestedMethods & QBluetoothDeviceDiscoveryAgent::ClassicMethod);
     Q_ASSERT(agentState == NonActive);
 
+    OSXBluetooth::qt_test_iobluetooth_runloop();
+
     if (!inquiry) {
         // The first Classic scan for this DDA.
         inquiry.reset([[DeviceInquiryObjC alloc]initWithDelegate:this]);
@@ -525,7 +527,7 @@ void QBluetoothDeviceDiscoveryAgentPrivate::deviceFound(const QBluetoothDeviceIn
     for (int i = 0, e = discoveredDevices.size(); i < e; ++i) {
         if (isLE ? discoveredDevices[i].deviceUuid() == newDeviceInfo.deviceUuid():
                    discoveredDevices[i].address() == newDeviceInfo.address()) {
-            if (discoveredDevices[i] == newDeviceInfo)
+            if (discoveredDevices[i] == newDeviceInfo && (!isLE || lowEnergySearchTimeout > 0))
                 return;
 
             discoveredDevices.replace(i, newDeviceInfo);

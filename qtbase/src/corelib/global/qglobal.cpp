@@ -47,6 +47,9 @@
 #include "qdatetime.h"
 #include "qoperatingsystemversion.h"
 #include "qoperatingsystemversion_p.h"
+#if defined(Q_OS_WIN) || defined(Q_OS_CYGWIN) || defined(Q_OS_WINRT)
+#include "qoperatingsystemversion_win_p.h"
+#endif
 #include <private/qlocale_tools_p.h>
 
 #include <qmutex.h>
@@ -95,7 +98,26 @@
 #include <sys/sysctl.h>
 #endif
 
+#if defined(Q_OS_INTEGRITY)
+extern "C" {
+    // Function mmap resides in libshm_client.a. To be able to link with it one needs
+    // to define symbols 'shm_area_password' and 'shm_area_name', because the library
+    // is meant to allow the application that links to it to use POSIX shared memory
+    // without full system POSIX.
+#  pragma weak shm_area_password
+#  pragma weak shm_area_name
+    char *shm_area_password = "dummy";
+    char *shm_area_name = "dummy";
+}
+#endif
+
 #include "archdetect.cpp"
+
+#ifdef qFatal
+// the qFatal in this file are just redirections from elsewhere, so
+// don't capture any context again
+#  undef qFatal
+#endif
 
 QT_BEGIN_NAMESPACE
 
@@ -2320,6 +2342,7 @@ Lollipop
 Marshmallow
 Nougat
 Nougat
+Oreo
  */
     static const char versions_string[] =
         "\0"
@@ -2335,13 +2358,14 @@ Nougat
         "Lollipop\0"
         "Marshmallow\0"
         "Nougat\0"
+        "Oreo\0"
         "\0";
 
     static const int versions_indices[] = {
            0,    0,    0,    1,    9,   15,   15,   15,
           22,   28,   28,   40,   40,   40,   50,   50,
           69,   69,   69,   80,   80,   87,   87,   96,
-         108,  108,   -1
+         108,  108,  115,   -1
     };
 
     static const int versions_count = (sizeof versions_indices) / (sizeof versions_indices[0]);
@@ -3010,13 +3034,20 @@ QString QSysInfo::machineHostName()
     If this macro is used outside a function, the behavior is undefined.
  */
 
-/*
-  The Q_CHECK_PTR macro calls this function if an allocation check
-  fails.
+/*!
+    \internal
+    The Q_CHECK_PTR macro calls this function if an allocation check
+    fails.
 */
-void qt_check_pointer(const char *n, int l)
+void qt_check_pointer(const char *n, int l) Q_DECL_NOTHROW
 {
-    qFatal("In file %s, line %d: Out of memory", n, l);
+    // make separate printing calls so that the first one may flush;
+    // the second one could want to allocate memory (fputs prints a
+    // newline and stderr auto-flushes).
+    fputs("Out of memory", stderr);
+    fprintf(stderr, "  in %s, line %d\n", n, l);
+
+    std::terminate();
 }
 
 /*
@@ -3046,7 +3077,7 @@ Q_NORETURN void qTerminate() Q_DECL_NOTHROW
 */
 void qt_assert(const char *assertion, const char *file, int line) Q_DECL_NOTHROW
 {
-    qFatal("ASSERT: \"%s\" in file %s, line %d", assertion, file, line);
+    QMessageLogger(file, line, nullptr).fatal("ASSERT: \"%s\" in file %s, line %d", assertion, file, line);
 }
 
 /*
@@ -3054,7 +3085,7 @@ void qt_assert(const char *assertion, const char *file, int line) Q_DECL_NOTHROW
 */
 void qt_assert_x(const char *where, const char *what, const char *file, int line) Q_DECL_NOTHROW
 {
-    qFatal("ASSERT failure in %s: \"%s\", file %s, line %d", where, what, file, line);
+    QMessageLogger(file, line, nullptr).fatal("ASSERT failure in %s: \"%s\", file %s, line %d", where, what, file, line);
 }
 
 
@@ -3088,98 +3119,6 @@ Q_CORE_EXPORT unsigned int qt_int_sqrt(unsigned int n)
 
 void *qMemCopy(void *dest, const void *src, size_t n) { return memcpy(dest, src, n); }
 void *qMemSet(void *dest, int c, size_t n) { return memset(dest, c, n); }
-
-#if !defined(Q_OS_WIN) && !defined(QT_NO_THREAD) && !defined(Q_OS_INTEGRITY) && !defined(Q_OS_QNX) && \
-    defined(_POSIX_THREAD_SAFE_FUNCTIONS) && _POSIX_VERSION >= 200112L
-namespace {
-    // There are two incompatible versions of strerror_r:
-    // a) the XSI/POSIX.1 version, which returns an int,
-    //    indicating success or not
-    // b) the GNU version, which returns a char*, which may or may not
-    //    be the beginning of the buffer we used
-    // The GNU libc manpage for strerror_r says you should use the XSI
-    // version in portable code. However, it's impossible to do that if
-    // _GNU_SOURCE is defined so we use C++ overloading to decide what to do
-    // depending on the return type
-    static inline Q_DECL_UNUSED QString fromstrerror_helper(int, const QByteArray &buf)
-    {
-        return QString::fromLocal8Bit(buf.constData());
-    }
-    static inline Q_DECL_UNUSED QString fromstrerror_helper(const char *str, const QByteArray &)
-    {
-        return QString::fromLocal8Bit(str);
-    }
-}
-#endif
-
-QString qt_error_string(int errorCode)
-{
-    const char *s = 0;
-    QString ret;
-    if (errorCode == -1) {
-#if defined(Q_OS_WIN)
-        errorCode = GetLastError();
-#else
-        errorCode = errno;
-#endif
-    }
-    switch (errorCode) {
-    case 0:
-        break;
-    case EACCES:
-        s = QT_TRANSLATE_NOOP("QIODevice", "Permission denied");
-        break;
-    case EMFILE:
-        s = QT_TRANSLATE_NOOP("QIODevice", "Too many open files");
-        break;
-    case ENOENT:
-        s = QT_TRANSLATE_NOOP("QIODevice", "No such file or directory");
-        break;
-    case ENOSPC:
-        s = QT_TRANSLATE_NOOP("QIODevice", "No space left on device");
-        break;
-    default: {
-#if defined(Q_OS_WIN)
-        // Retrieve the system error message for the last-error code.
-#  ifndef Q_OS_WINRT
-        wchar_t *string = 0;
-        FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_ALLOCATE_BUFFER,
-                      NULL,
-                      errorCode,
-                      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                      (LPWSTR)&string,
-                      0,
-                      NULL);
-        ret = QString::fromWCharArray(string);
-        LocalFree((HLOCAL)string);
-#  else // !Q_OS_WINRT
-        __declspec(thread) static wchar_t errorString[4096];
-        FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-                      NULL,
-                      errorCode,
-                      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                      errorString,
-                      ARRAYSIZE(errorString),
-                      NULL);
-        ret = QString::fromWCharArray(errorString);
-#  endif // Q_OS_WINRT
-
-        if (ret.isEmpty() && errorCode == ERROR_MOD_NOT_FOUND)
-            ret = QString::fromLatin1("The specified module could not be found.");
-#elif !defined(QT_NO_THREAD) && defined(_POSIX_THREAD_SAFE_FUNCTIONS) && _POSIX_VERSION >= 200112L && !defined(Q_OS_INTEGRITY) && !defined(Q_OS_QNX)
-        QByteArray buf(1024, '\0');
-        ret = fromstrerror_helper(strerror_r(errorCode, buf.data(), buf.size()), buf);
-#else
-        ret = QString::fromLocal8Bit(strerror(errorCode));
-#endif
-    break; }
-    }
-    if (s)
-        // ######## this breaks moc build currently
-//         ret = QCoreApplication::translate("QIODevice", s);
-        ret = QString::fromLatin1(s);
-    return ret.trimmed();
-}
 
 // In the C runtime on all platforms access to the environment is not thread-safe. We
 // add thread-safety for the Qt wrappers.
@@ -3410,7 +3349,11 @@ bool qunsetenv(const char *varName)
 #endif
 }
 
-#if defined(Q_OS_UNIX) && !defined(QT_NO_THREAD) && defined(_POSIX_THREAD_SAFE_FUNCTIONS) && (_POSIX_THREAD_SAFE_FUNCTIONS - 0 > 0)
+#if defined(Q_OS_ANDROID) && (__ANDROID_API__ < 21)
+typedef QThreadStorage<QJNIObjectPrivate> AndroidRandomStorage;
+Q_GLOBAL_STATIC(AndroidRandomStorage, randomTLS)
+
+#elif defined(Q_OS_UNIX) && !defined(QT_NO_THREAD) && defined(_POSIX_THREAD_SAFE_FUNCTIONS) && (_POSIX_THREAD_SAFE_FUNCTIONS - 0 > 0)
 
 #  if defined(Q_OS_INTEGRITY) && defined(__GHS_VERSION_NUMBER) && (__GHS_VERSION_NUMBER < 500)
 // older versions of INTEGRITY used a long instead of a uint for the seed.
@@ -3421,10 +3364,6 @@ typedef uint SeedStorageType;
 
 typedef QThreadStorage<SeedStorageType *> SeedStorage;
 Q_GLOBAL_STATIC(SeedStorage, randTLS)  // Thread Local Storage for seed value
-
-#elif defined(Q_OS_ANDROID)
-typedef QThreadStorage<QJNIObjectPrivate> AndroidRandomStorage;
-Q_GLOBAL_STATIC(AndroidRandomStorage, randomTLS)
 #endif
 
 /*!
@@ -3444,21 +3383,7 @@ Q_GLOBAL_STATIC(AndroidRandomStorage, randomTLS)
 */
 void qsrand(uint seed)
 {
-#if defined(Q_OS_UNIX) && !defined(QT_NO_THREAD) && defined(_POSIX_THREAD_SAFE_FUNCTIONS) && (_POSIX_THREAD_SAFE_FUNCTIONS - 0 > 0)
-    SeedStorage *seedStorage = randTLS();
-    if (seedStorage) {
-        SeedStorageType *pseed = seedStorage->localData();
-        if (!pseed)
-            seedStorage->setLocalData(pseed = new SeedStorageType);
-        *pseed = seed;
-    } else {
-        //global static seed storage should always exist,
-        //except after being deleted by QGlobalStaticDeleter.
-        //But since it still can be called from destructor of another
-        //global static object, fallback to srand(seed)
-        srand(seed);
-    }
-#elif defined(Q_OS_ANDROID)
+#if defined(Q_OS_ANDROID) && (__ANDROID_API__ < 21)
     if (randomTLS->hasLocalData()) {
         randomTLS->localData().callMethod<void>("setSeed", "(J)V", jlong(seed));
         return;
@@ -3473,6 +3398,20 @@ void qsrand(uint seed)
     }
 
     randomTLS->setLocalData(random);
+#elif defined(Q_OS_UNIX) && !defined(QT_NO_THREAD) && defined(_POSIX_THREAD_SAFE_FUNCTIONS) && (_POSIX_THREAD_SAFE_FUNCTIONS - 0 > 0)
+    SeedStorage *seedStorage = randTLS();
+    if (seedStorage) {
+        SeedStorageType *pseed = seedStorage->localData();
+        if (!pseed)
+            seedStorage->setLocalData(pseed = new SeedStorageType);
+        *pseed = seed;
+    } else {
+        //global static seed storage should always exist,
+        //except after being deleted by QGlobalStaticDeleter.
+        //But since it still can be called from destructor of another
+        //global static object, fallback to srand(seed)
+        srand(seed);
+    }
 #else
     // On Windows srand() and rand() already use Thread-Local-Storage
     // to store the seed between calls
@@ -3498,23 +3437,7 @@ void qsrand(uint seed)
 */
 int qrand()
 {
-#if defined(Q_OS_UNIX) && !defined(QT_NO_THREAD) && defined(_POSIX_THREAD_SAFE_FUNCTIONS) && (_POSIX_THREAD_SAFE_FUNCTIONS - 0 > 0)
-    SeedStorage *seedStorage = randTLS();
-    if (seedStorage) {
-        SeedStorageType *pseed = seedStorage->localData();
-        if (!pseed) {
-            seedStorage->setLocalData(pseed = new SeedStorageType);
-            *pseed = 1;
-        }
-        return rand_r(pseed);
-    } else {
-        //global static seed storage should always exist,
-        //except after being deleted by QGlobalStaticDeleter.
-        //But since it still can be called from destructor of another
-        //global static object, fallback to rand()
-        return rand();
-    }
-#elif defined(Q_OS_ANDROID)
+#if defined(Q_OS_ANDROID) && (__ANDROID_API__ < 21)
     AndroidRandomStorage *randomStorage = randomTLS();
     if (!randomStorage)
         return rand();
@@ -3534,6 +3457,22 @@ int qrand()
 
     randomStorage->setLocalData(random);
     return random.callMethod<jint>("nextInt", "(I)I", RAND_MAX);
+#elif defined(Q_OS_UNIX) && !defined(QT_NO_THREAD) && defined(_POSIX_THREAD_SAFE_FUNCTIONS) && (_POSIX_THREAD_SAFE_FUNCTIONS - 0 > 0)
+    SeedStorage *seedStorage = randTLS();
+    if (seedStorage) {
+        SeedStorageType *pseed = seedStorage->localData();
+        if (!pseed) {
+            seedStorage->setLocalData(pseed = new SeedStorageType);
+            *pseed = 1;
+        }
+        return rand_r(pseed);
+    } else {
+        //global static seed storage should always exist,
+        //except after being deleted by QGlobalStaticDeleter.
+        //But since it still can be called from destructor of another
+        //global static object, fallback to rand()
+        return rand();
+    }
 #else
     // On Windows srand() and rand() already use Thread-Local-Storage
     // to store the seed between calls
@@ -4362,6 +4301,7 @@ bool QInternal::activateCallbacks(Callback cb, void **parameters)
 /*!
     \macro qDebug(const char *message, ...)
     \relates <QtGlobal>
+    \threadsafe
 
     Calls the message handler with the debug message \a message. If no
     message handler has been installed, the message is printed to
@@ -4398,6 +4338,7 @@ bool QInternal::activateCallbacks(Callback cb, void **parameters)
 /*!
     \macro qInfo(const char *message, ...)
     \relates <QtGlobal>
+    \threadsafe
     \since 5.5
 
     Calls the message handler with the informational message \a message. If no
@@ -4435,6 +4376,7 @@ bool QInternal::activateCallbacks(Callback cb, void **parameters)
 /*!
     \macro qWarning(const char *message, ...)
     \relates <QtGlobal>
+    \threadsafe
 
     Calls the message handler with the warning message \a message. If no
     message handler has been installed, the message is printed to
@@ -4469,6 +4411,7 @@ bool QInternal::activateCallbacks(Callback cb, void **parameters)
 /*!
     \macro qCritical(const char *message, ...)
     \relates <QtGlobal>
+    \threadsafe
 
     Calls the message handler with the critical message \a message. If no
     message handler has been installed, the message is printed to

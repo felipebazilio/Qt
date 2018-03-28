@@ -33,6 +33,7 @@
 #include <private/qqmldebugconnection_p.h>
 
 #include <QtTest/qtest.h>
+#include <private/qtestresult_p.h>
 #include <QtCore/qlibraryinfo.h>
 
 #define STR_PORT_FROM "13773"
@@ -311,6 +312,7 @@ private slots:
     void signalSourceLocation();
     void javascript();
     void flushInterval();
+    void memory();
 };
 
 #define VERIFY(type, position, expected, checks) QVERIFY(verify(type, position, expected, checks))
@@ -562,6 +564,8 @@ void tst_QQmlProfilerService::connect()
 void tst_QQmlProfilerService::pixmapCacheData()
 {
     connect(true, "pixmapCacheTest.qml");
+    if (QTest::currentTestFailed() || QTestResult::skipCurrentTest())
+        return;
 
     m_client->sendRecordingStatus(true);
     QVERIFY(QQmlDebugTest::waitForSignal(m_process, SIGNAL(readyReadStandardOutput())));
@@ -599,6 +603,8 @@ void tst_QQmlProfilerService::pixmapCacheData()
 void tst_QQmlProfilerService::scenegraphData()
 {
     connect(true, "scenegraphTest.qml");
+    if (QTest::currentTestFailed() || QTestResult::skipCurrentTest())
+        return;
 
     m_client->sendRecordingStatus(true);
 
@@ -656,6 +662,8 @@ void tst_QQmlProfilerService::scenegraphData()
 void tst_QQmlProfilerService::profileOnExit()
 {
     connect(true, "exit.qml");
+    if (QTest::currentTestFailed() || QTestResult::skipCurrentTest())
+        return;
 
     m_client->sendRecordingStatus(true);
 
@@ -666,6 +674,8 @@ void tst_QQmlProfilerService::profileOnExit()
 void tst_QQmlProfilerService::controlFromJS()
 {
     connect(true, "controlFromJS.qml");
+    if (QTest::currentTestFailed() || QTestResult::skipCurrentTest())
+        return;
 
     m_client->sendRecordingStatus(false);
     checkTraceReceived();
@@ -675,6 +685,8 @@ void tst_QQmlProfilerService::controlFromJS()
 void tst_QQmlProfilerService::signalSourceLocation()
 {
     connect(true, "signalSourceLocation.qml");
+    if (QTest::currentTestFailed() || QTestResult::skipCurrentTest())
+        return;
 
     m_client->sendRecordingStatus(true);
     while (!(m_process->output().contains(QLatin1String("500"))))
@@ -698,6 +710,8 @@ void tst_QQmlProfilerService::signalSourceLocation()
 void tst_QQmlProfilerService::javascript()
 {
     connect(true, "javascript.qml");
+    if (QTest::currentTestFailed() || QTestResult::skipCurrentTest())
+        return;
 
     m_client->sendRecordingStatus(true);
     while (!(m_process->output().contains(QLatin1String("done"))))
@@ -728,6 +742,8 @@ void tst_QQmlProfilerService::javascript()
 void tst_QQmlProfilerService::flushInterval()
 {
     connect(true, "timer.qml");
+    if (QTest::currentTestFailed() || QTestResult::skipCurrentTest())
+        return;
 
     m_client->sendRecordingStatus(true, -1, 1);
 
@@ -739,6 +755,26 @@ void tst_QQmlProfilerService::flushInterval()
     m_client->sendRecordingStatus(false);
     checkTraceReceived();
     checkJsHeap();
+}
+
+void tst_QQmlProfilerService::memory()
+{
+    connect(true, "memory.qml");
+    if (QTest::currentTestFailed() || QTestResult::skipCurrentTest())
+        return;
+
+    m_client->sendRecordingStatus(true);
+
+    checkTraceReceived();
+    checkJsHeap();
+
+    int smallItems = 0;
+    for (auto message : m_client->jsHeapMessages) {
+        if (message.detailType == QV4::Profiling::SmallItem)
+            ++smallItems;
+    }
+
+    QVERIFY(smallItems > 5);
 }
 
 QTEST_MAIN(tst_QQmlProfilerService)

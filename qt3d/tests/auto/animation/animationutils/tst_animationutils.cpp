@@ -241,77 +241,6 @@ public:
 private Q_SLOTS:
     void checkBuildPropertyMappings_data()
     {
-        QTest::addColumn<Handler *>("handler");
-        QTest::addColumn<QVector<ChannelMapping *>>("channelMappings");
-        QTest::addColumn<ChannelMapper *>("channelMapper");
-        QTest::addColumn<AnimationClip *>("clip");
-        QTest::addColumn<QVector<MappingData>>("expectedMappingData");
-
-        auto handler = new Handler;
-        auto channelMapping = createChannelMapping(handler,
-                                                   QLatin1String("Location"),
-                                                   Qt3DCore::QNodeId::createId(),
-                                                   QLatin1String("translation"),
-                                                   "translation",
-                                                   static_cast<int>(QVariant::Vector3D));
-        QVector<ChannelMapping *> channelMappings;
-        channelMappings.push_back(channelMapping);
-
-        // ... a channel mapper...
-        auto channelMapper = createChannelMapper(handler, QVector<Qt3DCore::QNodeId>() << channelMapping->peerId());
-
-        // ...and an animation clip
-        auto clip = createAnimationClipLoader(handler, QUrl("qrc:/clip1.json"));
-
-        QVector<MappingData> mappingData;
-        MappingData mapping;
-        mapping.targetId = channelMapping->targetId();
-        mapping.propertyName = channelMapping->propertyName(); // Location
-        mapping.type = channelMapping->type();
-        mapping.channelIndices = QVector<int>() << 0 << 1 << 2; // Location X, Y, Z
-        mappingData.push_back(mapping);
-
-        QTest::newRow("clip1.json") << handler
-                                    << channelMappings
-                                    << channelMapper
-                                    << clip
-                                    << mappingData;
-    }
-
-    void checkBuildPropertyMappings()
-    {
-        // GIVEN
-        QFETCH(Handler *, handler);
-        QFETCH(QVector<ChannelMapping *>, channelMappings);
-        QFETCH(ChannelMapper *, channelMapper);
-        QFETCH(AnimationClip *, clip);
-        QFETCH(QVector<MappingData>, expectedMappingData);
-
-        // WHEN
-        // Build the mapping data for the above configuration
-        QVector<MappingData> mappingData = buildPropertyMappings(handler, clip, channelMapper);
-
-        // THEN
-        QCOMPARE(mappingData.size(), expectedMappingData.size());
-        for (int i = 0; i < mappingData.size(); ++i) {
-            const auto mapping = mappingData[i];
-            const auto expectedMapping = expectedMappingData[i];
-
-            QCOMPARE(mapping.targetId, expectedMapping.targetId);
-            QCOMPARE(mapping.propertyName, expectedMapping.propertyName);
-            QCOMPARE(mapping.type, expectedMapping.type);
-            QCOMPARE(mapping.channelIndices.size(), expectedMapping.channelIndices.size());
-            for (int j = 0; j < mapping.channelIndices.size(); ++j) {
-                QCOMPARE(mapping.channelIndices[j], expectedMapping.channelIndices[j]);
-            }
-        }
-
-        // Cleanup
-        delete handler;
-    }
-
-    void checkBuildPropertyMappings2_data()
-    {
         QTest::addColumn<QVector<ChannelMapping *>>("channelMappings");
         QTest::addColumn<QVector<ChannelNameAndType>>("channelNamesAndTypes");
         QTest::addColumn<QVector<ComponentIndices>>("channelComponentIndices");
@@ -477,7 +406,7 @@ private Q_SLOTS:
         }
     }
 
-    void checkBuildPropertyMappings2()
+    void checkBuildPropertyMappings()
     {
         // GIVEN
         QFETCH(QVector<ChannelMapping *>, channelMappings);
@@ -1522,6 +1451,34 @@ private Q_SLOTS:
             suffixes.clear();
             expectedResults.clear();
         }
+
+        // color with and without offset
+        {
+            channel = Channel();
+            channel.name = QLatin1String("Color");
+            channel.channelComponents.resize(3);
+            channel.channelComponents[0].name = QLatin1String("Color R");
+            channel.channelComponents[1].name = QLatin1String("Color G");
+            channel.channelComponents[2].name = QLatin1String("Color B");
+
+            dataType = static_cast<int>(QVariant::Color);
+            offset = 0;
+            suffixes = (QVector<char>() << 'R' << 'G' << 'B');
+            expectedResults = (QVector<int>() << 0 << 1 << 2);
+
+            QTest::newRow("QColor Color, offset = 0")
+                    << channel << dataType << offset << suffixes << expectedResults;
+
+            expectedResults.clear();
+
+            offset = 10;
+            expectedResults = (QVector<int>() << 10 << 11 << 12);
+            QTest::newRow("QColor Color, offset = 10")
+                    << channel << dataType << offset << suffixes << expectedResults;
+
+            suffixes.clear();
+            expectedResults.clear();
+        }
     }
 
     void checkChannelComponentsToIndicesHelper()
@@ -1604,6 +1561,32 @@ private Q_SLOTS:
             offset = 4;
             expectedResults = (QVector<int>() << 4 << 5 << 6);
             QTest::newRow("vec3 location, offset = 4")
+                    << channel << dataType << offset << expectedResults;
+
+            expectedResults.clear();
+        }
+
+        // QColor
+        {
+            channel = Channel();
+            channel.name = QLatin1String("Color");
+            channel.channelComponents.resize(3);
+            channel.channelComponents[0].name = QLatin1String("Color R");
+            channel.channelComponents[1].name = QLatin1String("Color G");
+            channel.channelComponents[2].name = QLatin1String("Color B");
+
+            dataType = static_cast<int>(QVariant::Color);
+            offset = 0;
+            expectedResults = (QVector<int>() << 0 << 1 << 2);
+
+            QTest::newRow("QColor Color, offset = 0")
+                    << channel << dataType << offset << expectedResults;
+
+            expectedResults.clear();
+
+            offset = 10;
+            expectedResults = (QVector<int>() << 10 << 11 << 12);
+            QTest::newRow("QColor Color, offset = 10")
                     << channel << dataType << offset << expectedResults;
 
             expectedResults.clear();
@@ -1866,6 +1849,18 @@ private Q_SLOTS:
             QVector<Qt3DCore::QNodeId> expectedIds = { value1->peerId(), value2->peerId() };
 
             QTest::newRow("simple lerp") << handler << lerp->peerId() << expectedIds;
+        }
+
+        {
+            Handler *handler = new Handler;
+
+            const auto value1 = createClipBlendValue(handler);
+            const auto clip1Id = Qt3DCore::QNodeId::createId();
+            value1->setClipId(clip1Id);
+
+            QVector<Qt3DCore::QNodeId> expectedIds = { value1->peerId() };
+
+            QTest::newRow("value only") << handler << value1->peerId() << expectedIds;
         }
     }
 
@@ -2423,8 +2418,8 @@ private Q_SLOTS:
             clip->setSource(QUrl("qrc:/clip3.json"));
             clip->loadAnimation();
 
-            ComponentIndices expectedResults = { 0, 1, 2, 3,    // Rotation
-                                                 4, 5, 6,       // Location
+            ComponentIndices expectedResults = { 0, 1, 3, 2,    // Rotation (y/z swapped in clip3.json)
+                                                 4, 6, 5,       // Location (y/z swapped in clip3.json)
                                                  7, 8, 9,       // Base Color
                                                  10,            // Metalness
                                                  11 };          // Roughness
@@ -2453,8 +2448,8 @@ private Q_SLOTS:
             clip->setSource(QUrl("qrc:/clip3.json"));
             clip->loadAnimation();
 
-            ComponentIndices expectedResults = { 4, 5, 6,       // Location
-                                                 0, 1, 2, 3,    // Rotation
+            ComponentIndices expectedResults = { 4, 6, 5,       // Location (y/z swapped in clip3.json)
+                                                 0, 1, 3, 2,    // Rotation (y/z swapped in clip3.json)
                                                  7, 8, 9,       // Base Color
                                                  10,            // Metalness
                                                  11 };          // Roughness
@@ -2483,8 +2478,8 @@ private Q_SLOTS:
             clip->setSource(QUrl("qrc:/clip3.json"));
             clip->loadAnimation();
 
-            ComponentIndices expectedResults = { 0, 1, 2, 3,    // Rotation
-                                                 4, 5, 6,       // Location
+            ComponentIndices expectedResults = { 0, 1, 3, 2,    // Rotation (y/z swapped in clip3.json)
+                                                 4, 6, 5,       // Location (y/z swapped in clip3.json)
                                                  -1, -1, -1,    // Albedo (missing from clip)
                                                  10,            // Metalness
                                                  11 };          // Roughness
@@ -2513,8 +2508,8 @@ private Q_SLOTS:
             clip->setSource(QUrl("qrc:/clip3.json"));
             clip->loadAnimation();
 
-            ComponentIndices expectedResults = { 4, 5, 6,       // Location
-                                                 0, 1, 2, 3,    // Rotation
+            ComponentIndices expectedResults = { 4, 6, 5,       // Location (y/z swapped in clip3.json)
+                                                 0, 1, 3, 2,    // Rotation (y/z swapped in clip3.json)
                                                  -1, -1, -1,    // Albedo (missing from clip)
                                                  10,            // Metalness
                                                  11 };          // Roughness

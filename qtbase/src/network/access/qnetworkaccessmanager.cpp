@@ -51,7 +51,9 @@
 #include "QtNetwork/qnetworksession.h"
 #include "QtNetwork/private/qsharednetworksession_p.h"
 
+#if QT_CONFIG(ftp)
 #include "qnetworkaccessftpbackend_p.h"
+#endif
 #include "qnetworkaccessfilebackend_p.h"
 #include "qnetworkaccessdebugpipebackend_p.h"
 #include "qnetworkaccesscachebackend_p.h"
@@ -71,23 +73,26 @@
 
 #include "qthread.h"
 
+#include <QHostInfo>
+
+#if defined(Q_OS_MACOS)
+#include <CoreServices/CoreServices.h>
+#include <SystemConfiguration/SystemConfiguration.h>
+#include <Security/SecKeychain.h>
+#endif
+
 QT_BEGIN_NAMESPACE
 
 Q_GLOBAL_STATIC(QNetworkAccessFileBackendFactory, fileBackend)
-#ifndef QT_NO_FTP
+#if QT_CONFIG(ftp)
 Q_GLOBAL_STATIC(QNetworkAccessFtpBackendFactory, ftpBackend)
-#endif // QT_NO_FTP
+#endif // QT_CONFIG(ftp)
 
 #ifdef QT_BUILD_INTERNAL
 Q_GLOBAL_STATIC(QNetworkAccessDebugPipeBackendFactory, debugpipeBackend)
 #endif
 
 #if defined(Q_OS_MACX)
-
-#include <CoreServices/CoreServices.h>
-#include <SystemConfiguration/SystemConfiguration.h>
-#include <Security/SecKeychain.h>
-
 bool getProxyAuth(const QString& proxyHostname, const QString &scheme, QString& username, QString& password)
 {
     OSStatus err;
@@ -144,7 +149,7 @@ bool getProxyAuth(const QString& proxyHostname, const QString &scheme, QString& 
 
 static void ensureInitialized()
 {
-#ifndef QT_NO_FTP
+#if QT_CONFIG(ftp)
     (void) ftpBackend();
 #endif
 
@@ -689,7 +694,7 @@ void QNetworkAccessManager::setCookieJar(QNetworkCookieJar *cookieJar)
         if (d->cookieJar && d->cookieJar->parent() == this)
             delete d->cookieJar;
         d->cookieJar = cookieJar;
-        if (thread() == cookieJar->thread())
+        if (cookieJar && thread() == cookieJar->thread())
             d->cookieJar->setParent(this);
     }
 }
@@ -980,8 +985,7 @@ QNetworkConfiguration QNetworkAccessManager::configuration() const
     if (session) {
         return session->configuration();
     } else {
-        QNetworkConfigurationManager manager;
-        return manager.defaultConfiguration();
+        return d->networkConfigurationManager.defaultConfiguration();
     }
 }
 
@@ -1005,12 +1009,11 @@ QNetworkConfiguration QNetworkAccessManager::activeConfiguration() const
     Q_D(const QNetworkAccessManager);
 
     QSharedPointer<QNetworkSession> networkSession(d->getNetworkSession());
-    QNetworkConfigurationManager manager;
     if (networkSession) {
-        return manager.configurationFromIdentifier(
+        return d->networkConfigurationManager.configurationFromIdentifier(
             networkSession->sessionProperty(QLatin1String("ActiveConfiguration")).toString());
     } else {
-        return manager.defaultConfiguration();
+        return d->networkConfigurationManager.defaultConfiguration();
     }
 }
 
@@ -1324,24 +1327,29 @@ QNetworkReply *QNetworkAccessManager::createRequest(QNetworkAccessManager::Opera
     }
 
 #ifndef QT_NO_BEARERMANAGEMENT
+
     // Return a disabled network reply if network access is disabled.
-    // Except if the scheme is empty or file://.
+    // Except if the scheme is empty or file:// or if the host resolves to a loopback address.
     if (d->networkAccessible == NotAccessible && !isLocalFile) {
-        return new QDisabledNetworkReply(this, req, op);
+        QHostAddress dest;
+        QString host = req.url().host().toLower();
+        if (!(dest.setAddress(host) && dest.isLoopback()) && host != QLatin1String("localhost")
+                && host != QHostInfo::localHostName().toLower()) {
+            return new QDisabledNetworkReply(this, req, op);
+        }
     }
 
     if (!d->networkSessionStrongRef && (d->initializeSession || !d->networkConfiguration.identifier().isEmpty())) {
-        QNetworkConfigurationManager manager;
         if (!d->networkConfiguration.identifier().isEmpty()) {
             if ((d->networkConfiguration.state() & QNetworkConfiguration::Defined)
-                    && d->networkConfiguration != manager.defaultConfiguration())
-                d->createSession(manager.defaultConfiguration());
+                    && d->networkConfiguration != d->networkConfigurationManager.defaultConfiguration())
+                d->createSession(d->networkConfigurationManager.defaultConfiguration());
             else
                 d->createSession(d->networkConfiguration);
 
         } else {
-            if (manager.capabilities() & QNetworkConfigurationManager::NetworkSessionRequired)
-                d->createSession(manager.defaultConfiguration());
+            if (d->networkSessionRequired)
+                d->createSession(d->networkConfigurationManager.defaultConfiguration());
             else
                 d->initializeSession = false;
         }
@@ -1831,7 +1839,8 @@ void QNetworkAccessManagerPrivate::_q_networkSessionStateChanged(QNetworkSession
         emit q->networkSessionConnected();
     lastSessionState = state;
 
-    if (online && state == QNetworkSession::Disconnected) {
+    if (online && (state == QNetworkSession::Disconnected
+                   || state == QNetworkSession::NotAvailable)) {
         const auto cfgs = networkConfigurationManager.allConfigurations();
         for (const QNetworkConfiguration &cfg : cfgs) {
             if (cfg.state().testFlag(QNetworkConfiguration::Active)) {
@@ -1873,9 +1882,9 @@ void QNetworkAccessManagerPrivate::_q_onlineStateChanged(bool isOnline)
         online = (networkConfiguration.state() & QNetworkConfiguration::Active);
     } else {
         if (online != isOnline) {
-                _q_networkSessionClosed();
-                createSession(q->configuration());
             online = isOnline;
+            _q_networkSessionClosed();
+            createSession(q->configuration());
         }
     }
     if (online) {
@@ -1898,13 +1907,13 @@ void QNetworkAccessManagerPrivate::_q_configurationChanged(const QNetworkConfigu
     const QString id = configuration.identifier();
     if (configuration.state().testFlag(QNetworkConfiguration::Active)) {
         if (!onlineConfigurations.contains(id)) {
-
             QSharedPointer<QNetworkSession> session(getNetworkSession());
             if (session) {
                 if (online && session->configuration().identifier()
                         != networkConfigurationManager.defaultConfiguration().identifier()) {
 
                     onlineConfigurations.insert(id);
+                    // CHECK: If it's having Active flag - why would it be disconnected ???
                     //this one disconnected but another one is online,
                     // close and create new session
                     _q_networkSessionClosed();
@@ -1915,6 +1924,7 @@ void QNetworkAccessManagerPrivate::_q_configurationChanged(const QNetworkConfigu
 
     } else if (onlineConfigurations.contains(id)) {
         //this one is disconnecting
+        // CHECK: If it disconnected while we create a session over a down configuration ???
         onlineConfigurations.remove(id);
         if (!onlineConfigurations.isEmpty()) {
             _q_networkSessionClosed();

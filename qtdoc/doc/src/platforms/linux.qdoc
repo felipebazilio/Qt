@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2017 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
@@ -211,13 +211,13 @@
     \li libfontconfig
     \li Font customization and configuration
     \li \tt{-fontconfig} or auto-detected
-    \li 2.1
+    \li 2.6
     \row {id="OptionalColor"}
     \li FreeType
     \li libfreetype
     \li Font engine
     \li
-    \li 2.1.3
+    \li 2.2.0
 
     \row {id="DefaultColor"}
     \li Xi
@@ -357,9 +357,16 @@
 
     \section1 Step 1: Installing the License File (Commercially Licensed Qt Only)
 
-        If you have a commercial Qt license, download the license file
-        from your \l {Qt Account} Web portal and save it as
-        \c{$HOME/.qt-license}.
+        If you use Qt with a commercial license, the Qt tools look for a local license file.
+        If you are using a binary installer or the commercial Qt Creator, your licenses
+        are automatically fetched and stored in your local user profile
+        (\c{$XDG_DATA_HOME/Qt/qtlicenses.ini} file).
+
+        If you do not use any binary installer or Qt Creator, you can download
+        the respective license file from your \l {Qt Account} Web portal and save
+        it to your user profile as \c{$HOME/.qt-license}. If you prefer a
+        different location or file name, you need to set the \c{QT_LICENSE_FILE}
+        environment variable to the respective file path.
 
     \section1 Step 2: Unpacking the Archive
         Unpack the archive if you have not done so already. For example,

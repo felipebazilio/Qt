@@ -529,12 +529,10 @@ int DSCameraSession::captureImage(const QString &fileName)
     return m_imageIdCounter;
 }
 
-void DSCameraSession::onFrameAvailable(double time, quint8 *buffer, long len)
+void DSCameraSession::onFrameAvailable(double time, const QByteArray &data)
 {
     // !!! Not called on the main thread
     Q_UNUSED(time);
-    // Deep copy, the data might be modified or freed after the callback returns
-    QByteArray data(reinterpret_cast<const char *>(buffer), len);
 
     m_presentMutex.lock();
 
@@ -817,8 +815,8 @@ bool DSCameraSession::configurePreviewFormat()
         return false;
     }
 
-    // Set sample grabber format (always RGB32)
-    static const AM_MEDIA_TYPE grabberFormat { MEDIATYPE_Video, MEDIASUBTYPE_RGB32, 0, 0, 0, FORMAT_VideoInfo, nullptr, 0, nullptr};
+    // Set sample grabber format
+    static const AM_MEDIA_TYPE grabberFormat { MEDIATYPE_Video, MEDIASUBTYPE_ARGB32, 0, 0, 0, FORMAT_VideoInfo, nullptr, 0, nullptr};
     if (!m_previewSampleGrabber->setMediaType(&grabberFormat))
         return false;
 

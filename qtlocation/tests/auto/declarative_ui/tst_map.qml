@@ -30,6 +30,7 @@ import QtQuick 2.0
 import QtTest 1.0
 import QtPositioning 5.5
 import QtLocation 5.9
+import QtLocation.Test 5.6
 
 Item {
     width:100
@@ -37,17 +38,19 @@ Item {
     // General-purpose elements for the test:
     Plugin { id: testPlugin; name: "qmlgeo.test.plugin"; allowExperimental: true }
     Plugin { id: testPlugin2; name: "gmlgeo.test.plugin"; allowExperimental: true }
-    Plugin { id: herePlugin; name: "here";
-        parameters: [
-            PluginParameter {
-                name: "here.app_id"
-                value: "stub"
-            },
-            PluginParameter {
-                name: "here.token"
-                value: "stub"
-            }
-        ]
+    Plugin {
+        id: testPluginLazyParameter;
+        name: "qmlgeo.test.plugin"
+        allowExperimental: true
+        property string extraTypeName : undefined
+        PluginParameter { name: "supported"; value: true}
+        PluginParameter { name: "finishRequestImmediately"; value: true}
+        PluginParameter { name: "validateWellKnownValues"; value: true}
+        PluginParameter { name: "extraMapTypeName"; value: testPluginLazyParameter.extraTypeName}
+
+        Component.onCompleted: {
+            extraTypeName = "SomeString"
+        }
     }
 
     property variant coordinate1: QtPositioning.coordinate(10, 11)
@@ -55,6 +58,10 @@ Item {
     property variant coordinate3: QtPositioning.coordinate(50, 50, 0)
     property variant coordinate4: QtPositioning.coordinate(80, 80, 0)
     property variant coordinate5: QtPositioning.coordinate(20, 180)
+    property variant coordinateCenterVisibleRegion: QtPositioning.coordinate(27, 77)
+    property variant coordinateVisible1: QtPositioning.coordinate(28, 77)
+    property variant coordinateVisible2: QtPositioning.coordinate(33, 79.1)
+    property variant coordinateVisible3: QtPositioning.coordinate(27, 80.5)
     property variant invalidCoordinate: QtPositioning.coordinate()
     property variant altitudelessCoordinate: QtPositioning.coordinate(50, 50)
     property bool allMapsReady: mapZoomOnCompleted.mapReady
@@ -65,6 +72,7 @@ Item {
                                 && coordinateMap.mapReady
                                 && mapTiltBearing.mapReady
                                 && mapTiltBearingHere.mapReady
+                                && mapTestProjection.mapReady
 
     Map { id: mapZoomOnCompleted; width: 200; height: 200;
         zoomLevel: 3; center: coordinate1; plugin: testPlugin;
@@ -84,19 +92,34 @@ Item {
         }
     }
 
+    Map { id: mapVisibleRegion; width: 800; height: 600;
+        center: coordinateCenterVisibleRegion; plugin: testPlugin; zoomLevel: 1.0 }
+
     Map {id: map; plugin: testPlugin; center: coordinate1; width: 100; height: 100}
     SignalSpy {id: mapCenterSpy; target: map; signalName: 'centerChanged'}
 
     Map {id: mapPar; plugin: testPlugin; center: coordinate1; width: 512; height: 512}
 
-    Map {id: coordinateMap; plugin: herePlugin; center: coordinate3;
+    Map {id: coordinateMap; plugin: testPlugin; center: coordinate3;
         width: 1000; height: 1000; zoomLevel: 15 }
 
     Map {id: mapTiltBearing; plugin: testPlugin; center: coordinate1;
         width: 1000; height: 1000; zoomLevel: 4; bearing: 45.0; tilt: 25.0 }
 
-    Map {id: mapTiltBearingHere; plugin: herePlugin; center: coordinate1;
+    Map {id: mapTiltBearingHere; plugin: testPlugin; center: coordinate1;
         width: 1000; height: 1000; zoomLevel: 4; bearing: 45.0; tilt: 25.0 }
+
+    Map {
+        id: mapWithLazyPlugin
+        plugin: testPluginLazyParameter
+    }
+
+    Map {
+        id: mapTestProjection
+        plugin: testPlugin
+        width: 200
+        height: 200
+    }
 
     MapParameter {
         id: testParameter
@@ -119,6 +142,11 @@ Item {
 
         function init() {
             mapCenterSpy.clear();
+        }
+
+        function test_lazy_parameter() {
+            compare(mapWithLazyPlugin.supportedMapTypes.length, 5)
+            compare(mapWithLazyPlugin.supportedMapTypes[4].name, "SomeString")
         }
 
         function test_map_center() {
@@ -146,6 +174,39 @@ Item {
             verify(isNaN(map.center.altitude));
             compare(map.center.longitude, 13)
             compare(map.center.latitude, 12)
+        }
+
+        function test_map_visible_region()
+        {
+            mapVisibleRegion.zoomLevel = 1.0
+            wait(50)
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible1))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible2))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible3))
+
+            mapVisibleRegion.zoomLevel = 1.88
+            verify(LocationTestHelper.waitForPolished(mapVisibleRegion))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible1))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible2))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible3))
+
+            mapVisibleRegion.zoomLevel = 2.12
+            verify(LocationTestHelper.waitForPolished(mapVisibleRegion))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible1))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible2))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible3))
+
+            mapVisibleRegion.zoomLevel = 2.5
+            verify(LocationTestHelper.waitForPolished(mapVisibleRegion))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible1))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible2))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible3))
+
+            mapVisibleRegion.zoomLevel = 2.7
+            verify(LocationTestHelper.waitForPolished(mapVisibleRegion))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible1))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible2))
+            verify(mapVisibleRegion.visibleRegion.contains(coordinateVisible3))
         }
 
         function test_map_parameters()
@@ -540,6 +601,20 @@ Item {
             coord = coordinateMap.toCoordinate(Qt.point(-5, -6))
             verify(isNaN(coord.latitude))
             verify(isNaN(coord.longitde))
+
+            // test with tilting
+            coord = QtPositioning.coordinate(45.6, 17.67)
+            var pos = mapTestProjection.fromCoordinate(coord, false)
+            compare(Math.floor(pos.x), 3339)
+            compare(Math.floor(pos.y), 1727)
+            mapTestProjection.tilt = 6
+            pos = mapTestProjection.fromCoordinate(coord, false)
+            compare(Math.floor(pos.x), 11066)
+            compare(Math.floor(pos.y), 5577)
+            mapTestProjection.tilt = 12
+            pos = mapTestProjection.fromCoordinate(coord, false)
+            verify(isNaN(pos.latitude))
+            verify(isNaN(pos.longitde))
         }
     }
 }

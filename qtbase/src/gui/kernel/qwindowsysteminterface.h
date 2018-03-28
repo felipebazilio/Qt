@@ -179,6 +179,10 @@ public:
     static void handleWindowStateChanged(QWindow *window, Qt::WindowState newState, int oldState = -1);
     static void handleWindowScreenChanged(QWindow *window, QScreen *newScreen);
 
+    template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
+    static void handleSafeAreaMarginsChanged(QWindow *window);
+
+    template<typename Delivery = QWindowSystemInterface::DefaultDelivery>
     static void handleApplicationStateChanged(Qt::ApplicationState newState, bool forcePropagate = false);
 
 #ifndef QT_NO_DRAGANDDROP
@@ -236,7 +240,7 @@ public:
                                        const QPoint &pos, const QPoint &globalPos,
                                        Qt::KeyboardModifiers modifiers);
 #endif
-#ifndef QT_NO_WHATSTHIS
+#if QT_CONFIG(whatsthis)
     static void handleEnterWhatsThisEvent();
 #endif
 

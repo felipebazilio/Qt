@@ -102,6 +102,10 @@ bool ObjGeometryLoader::doLoad(QIODevice *ioDev, const QString &subMesh)
         if (lineSize > 0 && line[0] != '#') {
             if (line[lineSize - 1] == '\n')
                 --lineSize; // chop newline
+            if (line[lineSize - 1] == '\r')
+                --lineSize; // chop newline also for CRLF format
+            while (line[lineSize - 1] == ' ' || line[lineSize - 1] == '\t')
+                --lineSize; // chop trailing spaces
 
             const ByteArraySplitter tokens(line, line + lineSize, ' ', QString::SkipEmptyParts);
 
@@ -144,7 +148,7 @@ bool ObjGeometryLoader::doLoad(QIODevice *ioDev, const QString &subMesh)
                         ++normalsOffset;
                     }
                 }
-            } else if (!skipping && qstrncmp(tokens.charPtrAt(0), "f ", 2) == 0) {
+            } else if (!skipping && tokens.size() >= 4 && qstrncmp(tokens.charPtrAt(0), "f ", 2) == 0) {
                 // Process face
                 ++faceCount;
 

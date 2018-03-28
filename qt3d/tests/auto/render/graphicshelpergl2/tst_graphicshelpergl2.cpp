@@ -255,13 +255,33 @@ private Q_SLOTS:
         QVERIFY(fboId != 0);
 
         // WHEN
-        m_glHelper.bindFrameBufferObject(fboId);
+        m_glHelper.bindFrameBufferObject(fboId, GraphicsHelperInterface::FBODraw);
 
         // THEN
-        const GLint error = m_func->glGetError();
+        GLint error = m_func->glGetError();
         QVERIFY(error == 0);
         GLint boundindFBOId = 0;
         m_func->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &boundindFBOId);
+        QVERIFY(GLuint(boundindFBOId) == fboId);
+
+        // WHEN
+        m_glHelper.bindFrameBufferObject(fboId, GraphicsHelperInterface::FBORead);
+
+        // THEN
+        error = m_func->glGetError();
+        QVERIFY(error == 0);
+        boundindFBOId = 0;
+        m_func->glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &boundindFBOId);
+        QVERIFY(GLuint(boundindFBOId) == fboId);
+
+        // WHEN
+        m_glHelper.bindFrameBufferObject(fboId, GraphicsHelperInterface::FBOReadAndDraw);
+
+        // THEN
+        error = m_func->glGetError();
+        QVERIFY(error == 0);
+        boundindFBOId = 0;
+        m_func->glGetIntegerv(GL_FRAMEBUFFER_BINDING, &boundindFBOId);
         QVERIFY(GLuint(boundindFBOId) == fboId);
 
         // Cleanup
@@ -902,7 +922,13 @@ private Q_SLOTS:
         ADD_UNIFORM_ENTRY(fragCodeUniformsInt, "multiplierVec4", GL_INT_VEC4, 1, 4 * 4);
 
         ADD_UNIFORM_ENTRY(fragCodeUniformsFloatMatrices, "m2",  GL_FLOAT_MAT2, 1, 4 * 2 * 2);
+        ADD_UNIFORM_ENTRY(fragCodeUniformsFloatMatrices, "m23", GL_FLOAT_MAT2x3, 1, 4 * 2 * 3);
+        ADD_UNIFORM_ENTRY(fragCodeUniformsFloatMatrices, "m32", GL_FLOAT_MAT3x2, 1, 4 * 3 * 2);
+        ADD_UNIFORM_ENTRY(fragCodeUniformsFloatMatrices, "m24", GL_FLOAT_MAT2x4, 1, 4 * 2 * 4);
+        ADD_UNIFORM_ENTRY(fragCodeUniformsFloatMatrices, "m42", GL_FLOAT_MAT4x2, 1, 4 * 4 * 2);
         ADD_UNIFORM_ENTRY(fragCodeUniformsFloatMatrices, "m3", GL_FLOAT_MAT3, 1, 4 * 3 * 3);
+        ADD_UNIFORM_ENTRY(fragCodeUniformsFloatMatrices, "m34", GL_FLOAT_MAT3x4, 1, 4 * 3 * 4);
+        ADD_UNIFORM_ENTRY(fragCodeUniformsFloatMatrices, "m43", GL_FLOAT_MAT4x3, 1, 4 * 4 * 3);
         ADD_UNIFORM_ENTRY(fragCodeUniformsFloatMatrices, "m4", GL_FLOAT_MAT4, 1, 4 * 4 * 4);
 
         ADD_UNIFORM_ENTRY(fragCodeSamplers, "s1", GL_SAMPLER_1D, 1, 4);

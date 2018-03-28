@@ -206,7 +206,7 @@ public:
     void refill(qreal from, qreal to);
     void mirrorChange() override;
 
-    FxViewItem *createItem(int modelIndex, bool asynchronous = false);
+    FxViewItem *createItem(int modelIndex,QQmlIncubator::IncubationMode incubationMode = QQmlIncubator::AsynchronousIfNested);
     virtual bool releaseItem(FxViewItem *item);
 
     QQuickItem *createHighlightItem() const;
@@ -363,6 +363,7 @@ protected:
     virtual void createHighlight() = 0;
     virtual void updateHighlight() = 0;
     virtual void resetHighlightPosition() = 0;
+    virtual bool movingFromHighlight() { return false; }
 
     virtual void setPosition(qreal pos) = 0;
     virtual void fixupPosition() = 0;

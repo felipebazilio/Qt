@@ -201,6 +201,7 @@ QQuickWidgetPrivate::QQuickWidgetPrivate()
     , fakeHidden(false)
     , requestedSamples(0)
     , useSoftwareRenderer(false)
+    , forceFullUpdate(false)
 {
 }
 
@@ -306,6 +307,10 @@ void QQuickWidgetPrivate::render(bool needsSync)
         auto softwareRenderer = static_cast<QSGSoftwareRenderer*>(cd->renderer);
         if (softwareRenderer && !softwareImage.isNull()) {
             softwareRenderer->setCurrentPaintDevice(&softwareImage);
+            if (forceFullUpdate) {
+                softwareRenderer->markDirty();
+                forceFullUpdate = false;
+            }
             renderControl->render();
 
             updateRegion += softwareRenderer->flushRegion();
@@ -423,7 +428,7 @@ QImage QQuickWidgetPrivate::grabFramebuffer()
     entire purpose of QQuickWidget is to render Quick scenes without a separate native
     window, hence making it a native widget should always be avoided.
 
-    \section1 Scene graph and context persistency
+    \section1 Scene Graph and Context Persistency
 
     QQuickWidget honors QQuickWindow::isPersistentSceneGraph(), meaning that
     applications can decide - by calling
@@ -913,9 +918,10 @@ void QQuickWidget::createFramebufferObject()
     d->offscreenWindow->setGeometry(globalPos.x(), globalPos.y(), width(), height());
 
     if (d->useSoftwareRenderer) {
-        const QSize imageSize = size() * devicePixelRatio();
+        const QSize imageSize = size() * devicePixelRatioF();
         d->softwareImage = QImage(imageSize, QImage::Format_ARGB32_Premultiplied);
-        d->softwareImage.setDevicePixelRatio(devicePixelRatio());
+        d->softwareImage.setDevicePixelRatio(devicePixelRatioF());
+        d->forceFullUpdate = true;
         return;
     }
 
@@ -928,7 +934,7 @@ void QQuickWidget::createFramebufferObject()
     }
 
     QOpenGLContext *shareWindowContext = QWidgetPrivate::get(window())->shareContext();
-    if (shareWindowContext && context->shareContext() != shareWindowContext) {
+    if (shareWindowContext && context->shareContext() != shareWindowContext && !qGuiApp->testAttribute(Qt::AA_ShareOpenGLContexts)) {
         context->setShareContext(shareWindowContext);
         context->setScreen(shareWindowContext->screen());
         if (!context->create())
@@ -960,7 +966,7 @@ void QQuickWidget::createFramebufferObject()
         format.setInternalTextureFormat(GL_SRGB8_ALPHA8_EXT);
 #endif
 
-    const QSize fboSize = size() * devicePixelRatio();
+    const QSize fboSize = size() * devicePixelRatioF();
 
     // Could be a simple hide - show, in which case the previous fbo is just fine.
     if (!d->fbo || d->fbo->size() != fboSize) {
@@ -1181,7 +1187,7 @@ void QQuickWidget::resizeEvent(QResizeEvent *e)
     // Software Renderer
     if (d->useSoftwareRenderer) {
         needsSync = true;
-        if (d->softwareImage.size() != size() * devicePixelRatio()) {
+        if (d->softwareImage.size() != size() * devicePixelRatioF()) {
             createFramebufferObject();
         }
     } else {
@@ -1191,7 +1197,7 @@ void QQuickWidget::resizeEvent(QResizeEvent *e)
             // during hide - resize - show sequences and also during application exit.
             if (!d->fbo && !d->offscreenWindow->openglContext())
                 return;
-            if (!d->fbo || d->fbo->size() != size() * devicePixelRatio()) {
+            if (!d->fbo || d->fbo->size() != size() * devicePixelRatioF()) {
                 needsSync = true;
                 createFramebufferObject();
             }
@@ -1240,11 +1246,12 @@ void QQuickWidget::mouseMoveEvent(QMouseEvent *e)
     Q_QUICK_INPUT_PROFILE(QQuickProfiler::Mouse, QQuickProfiler::InputMouseMove, e->localPos().x(),
                           e->localPos().y());
 
-    // Use the constructor taking localPos and screenPos. That puts localPos into the
-    // event's localPos and windowPos, and screenPos into the event's screenPos. This way
-    // the windowPos in e is ignored and is replaced by localPos. This is necessary
-    // because QQuickWindow thinks of itself as a top-level window always.
-    QMouseEvent mappedEvent(e->type(), e->localPos(), e->screenPos(), e->button(), e->buttons(), e->modifiers());
+    // Put localPos into the event's localPos and windowPos, and screenPos into the
+    // event's screenPos. This way the windowPos in e is ignored and is replaced by
+    // localPos. This is necessary because QQuickWindow thinks of itself as a
+    // top-level window always.
+    QMouseEvent mappedEvent(e->type(), e->localPos(), e->localPos(), e->screenPos(),
+                            e->button(), e->buttons(), e->modifiers(), e->source());
     QCoreApplication::sendEvent(d->offscreenWindow, &mappedEvent);
     e->setAccepted(mappedEvent.isAccepted());
 }
@@ -1258,12 +1265,12 @@ void QQuickWidget::mouseDoubleClickEvent(QMouseEvent *e)
 
     // As the second mouse press is suppressed in widget windows we emulate it here for QML.
     // See QTBUG-25831
-    QMouseEvent pressEvent(QEvent::MouseButtonPress, e->localPos(), e->screenPos(), e->button(),
-                           e->buttons(), e->modifiers());
+    QMouseEvent pressEvent(QEvent::MouseButtonPress, e->localPos(), e->localPos(), e->screenPos(),
+                           e->button(), e->buttons(), e->modifiers(), e->source());
     QCoreApplication::sendEvent(d->offscreenWindow, &pressEvent);
     e->setAccepted(pressEvent.isAccepted());
-    QMouseEvent mappedEvent(e->type(), e->localPos(), e->screenPos(), e->button(), e->buttons(),
-                            e->modifiers());
+    QMouseEvent mappedEvent(e->type(), e->localPos(), e->localPos(), e->screenPos(),
+                            e->button(), e->buttons(), e->modifiers(), e->source());
     QCoreApplication::sendEvent(d->offscreenWindow, &mappedEvent);
 }
 
@@ -1323,7 +1330,8 @@ void QQuickWidget::mousePressEvent(QMouseEvent *e)
     Q_QUICK_INPUT_PROFILE(QQuickProfiler::Mouse, QQuickProfiler::InputMousePress, e->button(),
                           e->buttons());
 
-    QMouseEvent mappedEvent(e->type(), e->localPos(), e->screenPos(), e->button(), e->buttons(), e->modifiers());
+    QMouseEvent mappedEvent(e->type(), e->localPos(), e->localPos(), e->screenPos(),
+                            e->button(), e->buttons(), e->modifiers(), e->source());
     QCoreApplication::sendEvent(d->offscreenWindow, &mappedEvent);
     e->setAccepted(mappedEvent.isAccepted());
 }
@@ -1335,7 +1343,8 @@ void QQuickWidget::mouseReleaseEvent(QMouseEvent *e)
     Q_QUICK_INPUT_PROFILE(QQuickProfiler::Mouse, QQuickProfiler::InputMouseRelease, e->button(),
                           e->buttons());
 
-    QMouseEvent mappedEvent(e->type(), e->localPos(), e->screenPos(), e->button(), e->buttons(), e->modifiers());
+    QMouseEvent mappedEvent(e->type(), e->localPos(), e->localPos(), e->screenPos(),
+                            e->button(), e->buttons(), e->modifiers(), e->source());
     QCoreApplication::sendEvent(d->offscreenWindow, &mappedEvent);
     e->setAccepted(mappedEvent.isAccepted());
 }
@@ -1385,21 +1394,55 @@ static Qt::WindowState resolveWindowState(Qt::WindowStates states)
     return Qt::WindowNoState;
 }
 
+static void remapInputMethodQueryEvent(QObject *object, QInputMethodQueryEvent *e)
+{
+    auto item = qobject_cast<QQuickItem *>(object);
+    if (!item)
+        return;
+
+    // Remap all QRectF values.
+    for (auto query : {Qt::ImCursorRectangle, Qt::ImAnchorRectangle, Qt::ImInputItemClipRectangle}) {
+        if (e->queries() & query) {
+            auto value = e->value(query);
+            if (value.canConvert<QRectF>())
+                e->setValue(query, item->mapRectToScene(value.toRectF()));
+        }
+    }
+    // Remap all QPointF values.
+    if (e->queries() & Qt::ImCursorPosition) {
+        auto value = e->value(Qt::ImCursorPosition);
+        if (value.canConvert<QPointF>())
+            e->setValue(Qt::ImCursorPosition, item->mapToScene(value.toPointF()));
+    }
+}
+
 /*! \reimp */
 bool QQuickWidget::event(QEvent *e)
 {
     Q_D(QQuickWidget);
 
     switch (e->type()) {
-    case QEvent::InputMethod:
-    case QEvent::InputMethodQuery:
 
+    case QEvent::Leave:
     case QEvent::TouchBegin:
     case QEvent::TouchEnd:
     case QEvent::TouchUpdate:
     case QEvent::TouchCancel:
         // Touch events only have local and global positions, no need to map.
         return QCoreApplication::sendEvent(d->offscreenWindow, e);
+
+    case QEvent::InputMethod:
+        return QCoreApplication::sendEvent(d->offscreenWindow->focusObject(), e);
+    case QEvent::InputMethodQuery:
+        {
+            bool eventResult = QCoreApplication::sendEvent(d->offscreenWindow->focusObject(), e);
+            // The result in focusObject are based on offscreenWindow. But
+            // the inputMethodTransform won't get updated because the focus
+            // is on QQuickWidget. We need to remap the value based on the
+            // widget.
+            remapInputMethodQueryEvent(d->offscreenWindow->focusObject(), static_cast<QInputMethodQueryEvent *>(e));
+            return eventResult;
+        }
 
     case QEvent::WindowChangeInternal:
         d->handleWindowChange();
@@ -1443,6 +1486,14 @@ bool QQuickWidget::event(QEvent *e)
     case QEvent::ShortcutOverride:
         return QCoreApplication::sendEvent(d->offscreenWindow, e);
 
+    case QEvent::Enter: {
+        QEnterEvent *enterEvent = static_cast<QEnterEvent *>(e);
+        QEnterEvent mappedEvent(enterEvent->localPos(), enterEvent->windowPos(),
+                                enterEvent->screenPos());
+        const bool ret = QCoreApplication::sendEvent(d->offscreenWindow, &mappedEvent);
+        e->setAccepted(mappedEvent.isAccepted());
+        return ret;
+    }
     default:
         break;
     }
@@ -1607,10 +1658,12 @@ void QQuickWidget::paintEvent(QPaintEvent *event)
             //Paint everything
             painter.drawImage(rect(), d->softwareImage);
         } else {
+            QTransform transform;
+            transform.scale(devicePixelRatioF(), devicePixelRatioF());
             //Paint only the updated areas
             const auto rects = d->updateRegion.rects();
             for (auto targetRect : rects) {
-                auto sourceRect = QRect(targetRect.topLeft() * devicePixelRatio(), targetRect.size() * devicePixelRatio());
+                auto sourceRect = transform.mapRect(QRectF(targetRect));
                 painter.drawImage(targetRect, d->softwareImage, sourceRect);
             }
             d->updateRegion = QRegion();

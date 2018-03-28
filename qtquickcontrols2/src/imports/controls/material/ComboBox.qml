@@ -84,7 +84,7 @@ T.ComboBox {
 
         enabled: control.editable
         autoScroll: control.editable
-        readOnly: control.popup.visible
+        readOnly: control.down
         inputMethodHints: control.inputMethodHints
         validator: control.validator
 
@@ -92,7 +92,6 @@ T.ComboBox {
         color: control.enabled ? control.Material.foreground : control.Material.hintTextColor
         selectionColor: control.Material.accentColor
         selectedTextColor: control.Material.primaryHighlightedTextColor
-        horizontalAlignment: Text.AlignLeft
         verticalAlignment: Text.AlignVCenter
 
         cursorDelegate: CursorDelegate { }
@@ -161,7 +160,7 @@ T.ComboBox {
         contentItem: ListView {
             clip: true
             implicitHeight: contentHeight
-            model: control.popup.visible ? control.delegateModel : null
+            model: control.delegateModel
             currentIndex: control.highlightedIndex
             highlightRangeMode: ListView.ApplyRange
             highlightMoveDuration: 0
@@ -171,7 +170,7 @@ T.ComboBox {
 
         background: Rectangle {
             radius: 2
-            color: control.popup.Material.dialogColor
+            color: parent.Material.dialogColor
 
             layer.enabled: control.enabled
             layer.effect: ElevationEffect {

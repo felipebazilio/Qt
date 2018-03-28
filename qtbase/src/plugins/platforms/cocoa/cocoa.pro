@@ -1,6 +1,6 @@
 TARGET = qcocoa
 
-OBJECTIVE_SOURCES += main.mm \
+SOURCES += main.mm \
     qcocoaintegration.mm \
     qcocoatheme.mm \
     qcocoabackingstore.mm \
@@ -20,9 +20,6 @@ OBJECTIVE_SOURCES += main.mm \
     qmultitouch_mac.mm \
     qcocoaaccessibilityelement.mm \
     qcocoaaccessibility.mm \
-    qcocoacolordialoghelper.mm \
-    qcocoafiledialoghelper.mm \
-    qcocoafontdialoghelper.mm \
     qcocoacursor.mm \
     qcocoaclipboard.mm \
     qcocoadrag.mm \
@@ -33,9 +30,8 @@ OBJECTIVE_SOURCES += main.mm \
     qcocoasystemtrayicon.mm \
     qcocoaintrospection.mm \
     qcocoakeymapper.mm \
-    qcocoamimetypes.mm
-
-SOURCES += messages.cpp
+    qcocoamimetypes.mm \
+    messages.cpp
 
 HEADERS += qcocoaintegration.h \
     qcocoatheme.h \
@@ -55,9 +51,6 @@ HEADERS += qcocoaintegration.h \
     qmultitouch_mac_p.h \
     qcocoaaccessibilityelement.h \
     qcocoaaccessibility.h \
-    qcocoacolordialoghelper.h \
-    qcocoafiledialoghelper.h \
-    qcocoafontdialoghelper.h \
     qcocoacursor.h \
     qcocoaclipboard.h \
     qcocoadrag.h \
@@ -72,7 +65,7 @@ HEADERS += qcocoaintegration.h \
     qcocoamimetypes.h
 
 qtConfig(opengl.*) {
-    OBJECTIVE_SOURCES += qcocoaglcontext.mm
+    SOURCES += qcocoaglcontext.mm
 
     HEADERS += qcocoaglcontext.h
 }
@@ -89,7 +82,9 @@ QT += \
 CONFIG += no_app_extension_api_only
 
 qtHaveModule(widgets) {
-    OBJECTIVE_SOURCES += \
+    QT_FOR_CONFIG += widgets
+
+    SOURCES += \
         qpaintengine_mac.mm \
         qprintengine_mac.mm \
         qcocoaprintersupport.mm \
@@ -100,6 +95,21 @@ qtHaveModule(widgets) {
         qprintengine_mac_p.h \
         qcocoaprintersupport.h \
         qcocoaprintdevice.h \
+
+    qtConfig(colordialog) {
+        SOURCES += qcocoacolordialoghelper.mm
+        HEADERS += qcocoacolordialoghelper.h
+    }
+
+    qtConfig(filedialog) {
+        SOURCES += qcocoafiledialoghelper.mm
+        HEADERS += qcocoafiledialoghelper.h
+    }
+
+    qtConfig(fontdialog) {
+        SOURCES += qcocoafontdialoghelper.mm
+        HEADERS += qcocoafontdialoghelper.h
+    }
 
     QT += widgets-private printsupport-private
 }

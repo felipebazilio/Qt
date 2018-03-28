@@ -25,16 +25,12 @@
 #include "letterconverter.h"
 #include <QMap>
 
-class RomkanPrivate;
+class WnnLookupTable;
 
 class Romkan : public LetterConverter
 {
     Q_OBJECT
     Q_DISABLE_COPY(Romkan)
-    Q_DECLARE_PRIVATE(Romkan)
-protected:
-    Romkan(QObjectPrivate &dd, QObject *parent = 0);
-
 public:
     explicit Romkan(QObject *parent = 0);
     ~Romkan();
@@ -42,7 +38,7 @@ public:
     bool convert(ComposingText &text) const;
 
 protected:
-    bool convertImpl(ComposingText &text, const QMap<QString, QString> &table) const;
+    bool convertImpl(ComposingText &text, const WnnLookupTable &table) const;
 };
 
 #endif // ROMKAN_H

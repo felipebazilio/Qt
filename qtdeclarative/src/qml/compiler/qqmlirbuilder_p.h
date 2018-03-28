@@ -432,7 +432,6 @@ struct Q_QML_PRIVATE_EXPORT Document
     QList<const QV4::CompiledData::Import *> imports;
     QList<Pragma*> pragmas;
     QQmlJS::AST::UiProgram *program;
-    int indexOfRootObject;
     QVector<Object*> objects;
     QV4::Compiler::JSUnitGenerator jsGenerator;
 
@@ -583,9 +582,9 @@ struct Q_QML_EXPORT PropertyResolver
 
 struct Q_QML_PRIVATE_EXPORT JSCodeGen : public QQmlJS::Codegen
 {
-    JSCodeGen(const QString &fileName, const QString &sourceCode, QV4::IR::Module *jsModule,
-              QQmlJS::Engine *jsEngine, QQmlJS::AST::UiProgram *qmlRoot, QQmlTypeNameCache *imports,
-              const QV4::Compiler::StringTableGenerator *stringPool);
+    JSCodeGen(const QString &fileName, const QString &finalUrl, const QString &sourceCode,
+              QV4::IR::Module *jsModule, QQmlJS::Engine *jsEngine, QQmlJS::AST::UiProgram *qmlRoot,
+              QQmlTypeNameCache *imports, const QV4::Compiler::StringTableGenerator *stringPool);
 
     struct IdMapping
     {

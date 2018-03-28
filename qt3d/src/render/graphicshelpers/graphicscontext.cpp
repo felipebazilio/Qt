@@ -590,7 +590,7 @@ void GraphicsContext::activateRenderTarget(Qt3DCore::QNodeId renderTargetNodeId,
                 // Insert FBO into hash
                 m_renderTargets.insert(renderTargetNodeId, fboId);
                 // Bind FBO
-                m_glHelper->bindFrameBufferObject(fboId);
+                m_glHelper->bindFrameBufferObject(fboId, GraphicsHelperInterface::FBODraw);
                 bindFrameBufferAttachmentHelper(fboId, attachments);
             } else {
                 qCritical() << "Failed to create FBO";
@@ -614,13 +614,13 @@ void GraphicsContext::activateRenderTarget(Qt3DCore::QNodeId renderTargetNodeId,
             }
 
             if (needsResize) {
-                m_glHelper->bindFrameBufferObject(fboId);
+                m_glHelper->bindFrameBufferObject(fboId, GraphicsHelperInterface::FBODraw);
                 bindFrameBufferAttachmentHelper(fboId, attachments);
             }
         }
     }
     m_activeFBO = fboId;
-    m_glHelper->bindFrameBufferObject(m_activeFBO);
+    m_glHelper->bindFrameBufferObject(m_activeFBO, GraphicsHelperInterface::FBODraw);
     // Set active drawBuffers
     activateDrawBuffers(attachments);
 }
@@ -950,9 +950,9 @@ void GraphicsContext::alphaTest(GLenum mode1, GLenum mode2)
     m_glHelper->alphaTest(mode1, mode2);
 }
 
-void GraphicsContext::bindFramebuffer(GLuint fbo)
+void GraphicsContext::bindFramebuffer(GLuint fbo, GraphicsHelperInterface::FBOBindMode mode)
 {
-    m_glHelper->bindFrameBufferObject(fbo);
+    m_glHelper->bindFrameBufferObject(fbo, mode);
 }
 
 void GraphicsContext::depthTest(GLenum mode)
@@ -1161,10 +1161,11 @@ void GraphicsContext::setRenderer(Renderer *renderer)
 
 // It will be easier if the QGraphicContext applies the QUniformPack
 // than the other way around
-void GraphicsContext::setParameters(ShaderParameterPack &parameterPack)
+bool GraphicsContext::setParameters(ShaderParameterPack &parameterPack)
 {
     // Activate textures and update TextureUniform in the pack
     // with the correct textureUnit
+    bool allValid = true;
 
     // Set the pinned texture of the previous material texture
     // to pinable so that we should easily find an available texture unit
@@ -1184,6 +1185,10 @@ void GraphicsContext::setParameters(ShaderParameterPack &parameterPack)
                 Q_ASSERT(texUniform.valueType() == UniformValue::TextureValue);
                 const int texUnit = activateTexture(TextureScopeMaterial, t);
                 texUniform.data<UniformValue::Texture>()->textureId = texUnit;
+                // if the texture data from generators may not be available yet,
+                // make sure that the next frame is rendered
+                if (texUnit == -1)
+                    allValid = false;
             }
         }
     }
@@ -1204,11 +1209,6 @@ void GraphicsContext::setParameters(ShaderParameterPack &parameterPack)
         // be bound as a VertexArray
         bindGLBuffer(ssbo, GLBuffer::ShaderStorageBuffer);
         ssbo->bindBufferBase(this, ssboIndex++, GLBuffer::ShaderStorageBuffer);
-        // Perform update if required
-        if (cpuBuffer->isDirty()) {
-            uploadDataToGLBuffer(cpuBuffer, ssbo);
-            cpuBuffer->unsetDirty();
-        }
         // TO DO: Make sure that there's enough binding points
     }
 
@@ -1224,11 +1224,6 @@ void GraphicsContext::setParameters(ShaderParameterPack &parameterPack)
         // be bound as a VertexArray
         bindGLBuffer(ubo, GLBuffer::UniformBuffer);
         ubo->bindBufferBase(this, uboIndex++, GLBuffer::UniformBuffer);
-        if (cpuBuffer->isDirty()) {
-            // Perform update if required
-            uploadDataToGLBuffer(cpuBuffer, ubo);
-            cpuBuffer->unsetDirty();
-        }
         // TO DO: Make sure that there's enough binding points
     }
 
@@ -1239,8 +1234,17 @@ void GraphicsContext::setParameters(ShaderParameterPack &parameterPack)
     for (const ShaderUniform &uniform : activeUniforms) {
         // We can use [] as we are sure the the uniform wouldn't
         // be un activeUniforms if there wasn't a matching value
-        applyUniform(uniform, values[uniform.m_nameId]);
+        const auto &v = values[uniform.m_nameId];
+
+        // skip invalid textures
+        if (v.valueType() == UniformValue::TextureValue &&
+                v.constData<UniformValue::Texture>()->textureId == -1)
+            continue;
+
+        applyUniform(uniform, v);
     }
+    // if not all data is valid, the next frame will be rendered immediately
+    return allValid;
 }
 
 void GraphicsContext::enableAttribute(const VAOVertexAttribute &attr)
@@ -1415,7 +1419,7 @@ void GraphicsContext::specifyAttribute(const Attribute *attribute, Buffer *buffe
         attr.dataType = attributeDataType;
         attr.byteOffset = attribute->byteOffset() + (i * attrCount * typeSize);
         attr.vertexSize = attribute->vertexSize() / attrCount;
-        attr.byteStride = attribute->byteStride() + (attrCount * attrCount * typeSize);
+        attr.byteStride = (attribute->byteStride() != 0) ? attribute->byteStride() : (attrCount * attrCount * typeSize);
         attr.divisor = attribute->divisor();
 
         enableAttribute(attr);
@@ -1812,8 +1816,11 @@ QImage GraphicsContext::readFramebuffer(QSize size)
 
     GLint samples = 0;
     m_gl->functions()->glGetIntegerv(GL_SAMPLES, &samples);
-    if (samples > 0 && !m_glHelper->supportsFeature(GraphicsHelperInterface::BlitFramebuffer))
+    if (samples > 0 && !m_glHelper->supportsFeature(GraphicsHelperInterface::BlitFramebuffer)) {
+        qWarning () << Q_FUNC_INFO << "Unable to capture multisampled framebuffer; "
+                       "Required feature BlitFramebuffer is missing.";
         return img;
+    }
 
     img = QImage(size.width(), size.height(), imageFormat);
 
@@ -1834,6 +1841,7 @@ QImage GraphicsContext::readFramebuffer(QSize size)
         if (status != GL_FRAMEBUFFER_COMPLETE) {
             gl->glDeleteRenderbuffers(1, &rb);
             gl->glDeleteFramebuffers(1, &fbo);
+            qWarning () << Q_FUNC_INFO << "Copy-framebuffer not complete: " << status;
             return img;
         }
 

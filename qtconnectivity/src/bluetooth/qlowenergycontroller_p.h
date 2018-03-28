@@ -85,8 +85,6 @@ QT_END_NAMESPACE
 #elif defined(QT_WINRT_BLUETOOTH)
 #include <wrl.h>
 #include <windows.devices.bluetooth.h>
-
-class QWinRTLowEnergyServiceHandler;
 #endif
 
 #include <functional>
@@ -103,6 +101,8 @@ class QSocketNotifier;
 class RemoteDeviceManager;
 #elif defined(QT_ANDROID_BLUETOOTH)
 class LowEnergyNotificationHub;
+#elif defined(QT_WINRT_BLUETOOTH)
+class QWinRTLowEnergyServiceHandler;
 #endif
 
 extern void registerQLowEnergyControllerMetaType();
@@ -147,6 +147,8 @@ public:
             QLowEnergyHandle handle);
     QLowEnergyDescriptor descriptorForHandle(
             QLowEnergyHandle handle);
+    QLowEnergyService *addServiceHelper(const QLowEnergyServiceData &service);
+
 
     quint16 updateValueOfCharacteristic(QLowEnergyHandle charHandle,
                                      const QByteArray &value,
@@ -416,6 +418,7 @@ private:
 
     void restartRequestTimer();
     void establishL2cpClientSocket();
+    void createServicesForCentralIfRequired();
 
 private slots:
     void l2cpConnected();

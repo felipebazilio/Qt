@@ -94,7 +94,8 @@ ThemeWidget::ThemeWidget(QWidget *parent) :
     m_charts << chartView;
 
     chartView = new QChartView(createPieChart());
-    chartView->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored); // funny things happen if the pie slice labels no not fit the screen...
+    // Funny things happen if the pie slice labels do not fit the screen, so we ignore size policy
+    chartView->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     baseLayout->addWidget(chartView, 2, 0);
     m_charts << chartView;
 
@@ -119,10 +120,16 @@ ThemeWidget::~ThemeWidget()
 
 void ThemeWidget::connectSignals()
 {
-    connect(m_themeComboBox, SIGNAL(currentIndexChanged(int)), this, SLOT(updateUI()));
-    connect(m_antialiasCheckBox, SIGNAL(toggled(bool)), this, SLOT(updateUI()));
-    connect(m_animatedComboBox, SIGNAL(currentIndexChanged(int)), this, SLOT(updateUI()));
-    connect(m_legendComboBox, SIGNAL(currentIndexChanged(int)), this, SLOT(updateUI()));
+    connect(m_themeComboBox,
+            static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+            this, &ThemeWidget::updateUI);
+    connect(m_antialiasCheckBox, &QCheckBox::toggled, this, &ThemeWidget::updateUI);
+    connect(m_animatedComboBox,
+            static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+            this, &ThemeWidget::updateUI);
+    connect(m_legendComboBox,
+            static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+            this, &ThemeWidget::updateUI);
 }
 
 DataTable ThemeWidget::generateRandomData(int listCount, int valueMax, int valueCount) const
@@ -226,7 +233,7 @@ QChart *ThemeWidget::createBarChart(int valueCount) const
     QStackedBarSeries *series = new QStackedBarSeries(chart);
     for (int i(0); i < m_dataTable.count(); i++) {
         QBarSet *set = new QBarSet("Bar set " + QString::number(i));
-        foreach (Data data, m_dataTable[i])
+        for (const Data &data : m_dataTable[i])
             *set << data.first.y();
         series->append(set);
     }
@@ -243,9 +250,9 @@ QChart *ThemeWidget::createLineChart() const
 
     QString name("Series ");
     int nameIndex = 0;
-    foreach (DataList list, m_dataTable) {
+    for (const DataList &list : m_dataTable) {
         QLineSeries *series = new QLineSeries(chart);
-        foreach (Data data, list)
+        for (const Data &data : list)
             series->append(data.first);
         series->setName(name + QString::number(nameIndex));
         nameIndex++;
@@ -264,7 +271,7 @@ QChart *ThemeWidget::createPieChart() const
     qreal pieSize = 1.0 / m_dataTable.count();
     for (int i = 0; i < m_dataTable.count(); i++) {
         QPieSeries *series = new QPieSeries(chart);
-        foreach (Data data, m_dataTable[i]) {
+        for (const Data &data : m_dataTable[i]) {
             QPieSlice *slice = series->append(data.second, data.first.y());
             if (data == m_dataTable[i].first()) {
                 slice->setLabelVisible();
@@ -288,9 +295,9 @@ QChart *ThemeWidget::createSplineChart() const
     chart->setTitle("Spline chart");
     QString name("Series ");
     int nameIndex = 0;
-    foreach (DataList list, m_dataTable) {
+    for (const DataList &list : m_dataTable) {
         QSplineSeries *series = new QSplineSeries(chart);
-        foreach (Data data, list)
+        for (const Data &data : list)
             series->append(data.first);
         series->setName(name + QString::number(nameIndex));
         nameIndex++;
@@ -307,9 +314,9 @@ QChart *ThemeWidget::createScatterChart() const
     chart->setTitle("Scatter chart");
     QString name("Series ");
     int nameIndex = 0;
-    foreach (DataList list, m_dataTable) {
+    for (const DataList &list : m_dataTable) {
         QScatterSeries *series = new QScatterSeries(chart);
-        foreach (Data data, list)
+        for (const Data &data : list)
             series->append(data.first);
         series->setName(name + QString::number(nameIndex));
         nameIndex++;
@@ -321,10 +328,12 @@ QChart *ThemeWidget::createScatterChart() const
 
 void ThemeWidget::updateUI()
 {
-    QChart::ChartTheme theme = (QChart::ChartTheme) m_themeComboBox->itemData(m_themeComboBox->currentIndex()).toInt();
+    QChart::ChartTheme theme = static_cast<QChart::ChartTheme>(
+                m_themeComboBox->itemData(m_themeComboBox->currentIndex()).toInt());
 
+    const auto charts = m_charts;
     if (m_charts.at(0)->chart()->theme() != theme) {
-        foreach (QChartView *chartView, m_charts)
+        for (QChartView *chartView : charts)
             chartView->chart()->setTheme(theme);
 
         QPalette pal = window()->palette();
@@ -357,22 +366,23 @@ void ThemeWidget::updateUI()
     }
 
     bool checked = m_antialiasCheckBox->isChecked();
-    foreach (QChartView *chart, m_charts)
+    for (QChartView *chart : charts)
         chart->setRenderHint(QPainter::Antialiasing, checked);
 
-    QChart::AnimationOptions options(m_animatedComboBox->itemData(m_animatedComboBox->currentIndex()).toInt());
+    QChart::AnimationOptions options(
+                m_animatedComboBox->itemData(m_animatedComboBox->currentIndex()).toInt());
     if (m_charts.at(0)->chart()->animationOptions() != options) {
-        foreach (QChartView *chartView, m_charts)
+        for (QChartView *chartView : charts)
             chartView->chart()->setAnimationOptions(options);
     }
 
     Qt::Alignment alignment(m_legendComboBox->itemData(m_legendComboBox->currentIndex()).toInt());
 
     if (!alignment) {
-        foreach (QChartView *chartView, m_charts)
+        for (QChartView *chartView : charts)
             chartView->chart()->legend()->hide();
     } else {
-        foreach (QChartView *chartView, m_charts) {
+        for (QChartView *chartView : charts) {
             chartView->chart()->legend()->setAlignment(alignment);
             chartView->chart()->legend()->show();
         }

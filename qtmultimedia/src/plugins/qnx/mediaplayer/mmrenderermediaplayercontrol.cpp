@@ -58,14 +58,14 @@ static int idCounter = 0;
 
 MmRendererMediaPlayerControl::MmRendererMediaPlayerControl(QObject *parent)
     : QMediaPlayerControl(parent),
-      m_connection(0),
       m_context(0),
+      m_id(-1),
+      m_connection(0),
       m_audioId(-1),
       m_state(QMediaPlayer::StoppedState),
       m_volume(100),
       m_muted(false),
       m_rate(1),
-      m_id(-1),
       m_position(0),
       m_mediaStatus(QMediaPlayer::NoMedia),
       m_playAfterMediaLoaded(false),
@@ -106,7 +106,7 @@ void MmRendererMediaPlayerControl::openConnection()
         return;
     }
 
-    startMonitoring(m_id, m_contextName);
+    startMonitoring();
 }
 
 void MmRendererMediaPlayerControl::handleMmStatusUpdate(qint64 newPosition)
@@ -463,15 +463,10 @@ void MmRendererMediaPlayerControl::setMedia(const QMediaContent &media, QIODevic
 
 void MmRendererMediaPlayerControl::continueLoadMedia()
 {
+    updateMetaData(nullptr);
     attach();
-    updateMetaData();
     if (m_playAfterMediaLoaded)
         play();
-}
-
-QString MmRendererMediaPlayerControl::contextName() const
-{
-    return m_contextName;
 }
 
 MmRendererVideoWindowControl *MmRendererMediaPlayerControl::videoWindowControl() const
@@ -592,12 +587,9 @@ void MmRendererMediaPlayerControl::setMmBufferLevel(const QString &bufferLevel)
     }
 }
 
-void MmRendererMediaPlayerControl::updateMetaData()
+void MmRendererMediaPlayerControl::updateMetaData(const strm_dict *dict)
 {
-    if (m_mediaStatus == QMediaPlayer::LoadedMedia)
-        m_metaData.parse(m_contextName);
-    else
-        m_metaData.clear();
+    m_metaData.update(dict);
 
     if (m_videoWindowControl)
         m_videoWindowControl->setMetaData(m_metaData);

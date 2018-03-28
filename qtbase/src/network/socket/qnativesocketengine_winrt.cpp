@@ -251,17 +251,16 @@ public:
     {
         HRESULT hr = action->GetResults();
         if (FAILED(hr)) {
-            switch (hr) {
-            case HRESULT_FROM_WIN32(WSAETIMEDOUT):
+            if (hr == HRESULT_FROM_WIN32(WSAETIMEDOUT)) {
                 emit connectOpFinished(false, QAbstractSocket::NetworkError, WinRTSocketEngine::ConnectionTimeOutErrorString);
                 return S_OK;
-            case HRESULT_FROM_WIN32(WSAEHOSTUNREACH):
+            } else if (hr == HRESULT_FROM_WIN32(WSAEHOSTUNREACH)) {
                 emit connectOpFinished(false, QAbstractSocket::HostNotFoundError, WinRTSocketEngine::HostUnreachableErrorString);
                 return S_OK;
-            case HRESULT_FROM_WIN32(WSAECONNREFUSED):
+            } else if (hr == HRESULT_FROM_WIN32(WSAECONNREFUSED)) {
                 emit connectOpFinished(false, QAbstractSocket::ConnectionRefusedError, WinRTSocketEngine::ConnectionRefusedErrorString);
                 return S_OK;
-            default:
+            } else {
                 emit connectOpFinished(false, QAbstractSocket::UnknownSocketError, WinRTSocketEngine::UnknownSocketErrorString);
                 return S_OK;
             }
@@ -536,8 +535,8 @@ QNativeSocketEngine::QNativeSocketEngine(QObject *parent)
 {
     qRegisterMetaType<WinRtDatagram>();
     qRegisterMetaType<WinRTSocketEngine::ErrorString>();
-#ifndef QT_NO_SSL
     Q_D(QNativeSocketEngine);
+#ifndef QT_NO_SSL
     if (parent)
         d->sslSocket = qobject_cast<QSslSocket *>(parent->parent());
 #endif

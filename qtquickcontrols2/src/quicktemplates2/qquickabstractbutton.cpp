@@ -37,6 +37,7 @@
 #include "qquickabstractbutton_p.h"
 #include "qquickabstractbutton_p_p.h"
 #include "qquickbuttongroup_p.h"
+#include "qquickdeferredexecute_p_p.h"
 
 #include <QtGui/qstylehints.h>
 #include <QtGui/qguiapplication.h>
@@ -69,13 +70,13 @@ static const int AUTO_REPEAT_INTERVAL = 100;
 /*!
     \qmlsignal QtQuick.Controls::AbstractButton::pressed()
 
-    This signal is emitted when the button is interactively pressed by the user.
+    This signal is emitted when the button is interactively pressed by the user via touch, mouse, or keyboard.
 */
 
 /*!
     \qmlsignal QtQuick.Controls::AbstractButton::released()
 
-    This signal is emitted when the button is interactively released by the user.
+    This signal is emitted when the button is interactively released by the user via touch, mouse, or keyboard.
 */
 
 /*!
@@ -89,26 +90,26 @@ static const int AUTO_REPEAT_INTERVAL = 100;
 /*!
     \qmlsignal QtQuick.Controls::AbstractButton::clicked()
 
-    This signal is emitted when the button is interactively clicked by the user.
+    This signal is emitted when the button is interactively clicked by the user via touch, mouse, or keyboard.
 */
 
 /*!
     \since QtQuick.Controls 2.2 (Qt 5.9)
     \qmlsignal QtQuick.Controls::AbstractButton::toggled()
 
-    This signal is emitted when a checkable button is interactively toggled by the user.
+    This signal is emitted when a checkable button is interactively toggled by the user via touch, mouse, or keyboard.
 */
 
 /*!
     \qmlsignal QtQuick.Controls::AbstractButton::pressAndHold()
 
-    This signal is emitted when the button is interactively pressed and held down by the user.
+    This signal is emitted when the button is interactively pressed and held down by the user via touch or mouse.
 */
 
 /*!
     \qmlsignal QtQuick.Controls::AbstractButton::doubleClicked()
 
-    This signal is emitted when the button is interactively double clicked by the user.
+    This signal is emitted when the button is interactively double clicked by the user via touch or mouse.
 */
 
 QQuickAbstractButtonPrivate::QQuickAbstractButtonPrivate()
@@ -256,6 +257,26 @@ void QQuickAbstractButtonPrivate::toggle(bool value)
     q->setChecked(value);
     if (wasChecked != checked)
         emit q->toggled();
+}
+
+static inline QString indicatorName() { return QStringLiteral("indicator"); }
+
+void QQuickAbstractButtonPrivate::cancelIndicator()
+{
+    Q_Q(QQuickAbstractButton);
+    quickCancelDeferred(q, indicatorName());
+}
+
+void QQuickAbstractButtonPrivate::executeIndicator(bool complete)
+{
+    Q_Q(QQuickAbstractButton);
+    if (indicator.wasExecuted())
+        return;
+
+    if (!indicator || complete)
+        quickBeginDeferred(q, indicatorName(), indicator);
+    if (complete)
+        quickCompleteDeferred(q, indicatorName(), indicator);
 }
 
 QQuickAbstractButton *QQuickAbstractButtonPrivate::findCheckedButton() const
@@ -545,7 +566,9 @@ void QQuickAbstractButton::setAutoRepeat(bool repeat)
 */
 QQuickItem *QQuickAbstractButton::indicator() const
 {
-    Q_D(const QQuickAbstractButton);
+    QQuickAbstractButtonPrivate *d = const_cast<QQuickAbstractButtonPrivate *>(d_func());
+    if (!d->indicator)
+        d->executeIndicator();
     return d->indicator;
 }
 
@@ -555,14 +578,18 @@ void QQuickAbstractButton::setIndicator(QQuickItem *indicator)
     if (d->indicator == indicator)
         return;
 
-    QQuickControlPrivate::destroyDelegate(d->indicator, this);
+    if (!d->indicator.isExecuting())
+        d->cancelIndicator();
+
+    delete d->indicator;
     d->indicator = indicator;
     if (indicator) {
         if (!indicator->parentItem())
             indicator->setParentItem(this);
         indicator->setAcceptedMouseButtons(Qt::LeftButton);
     }
-    emit indicatorChanged();
+    if (!d->indicator.isExecuting())
+        emit indicatorChanged();
 }
 
 /*!
@@ -574,6 +601,13 @@ void QQuickAbstractButton::toggle()
 {
     Q_D(QQuickAbstractButton);
     setChecked(!d->checked);
+}
+
+void QQuickAbstractButton::componentComplete()
+{
+    Q_D(QQuickAbstractButton);
+    d->executeIndicator(true);
+    QQuickControl::componentComplete();
 }
 
 void QQuickAbstractButton::focusOutEvent(QFocusEvent *event)

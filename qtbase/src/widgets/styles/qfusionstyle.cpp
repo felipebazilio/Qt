@@ -42,7 +42,9 @@
 
 #if QT_CONFIG(style_fusion) || defined(QT_PLUGIN)
 #include "qcommonstyle_p.h"
+#if QT_CONFIG(combobox)
 #include <qcombobox.h>
+#endif
 #if QT_CONFIG(pushbutton)
 #include <qpushbutton.h>
 #endif
@@ -53,19 +55,35 @@
 #include <qdir.h>
 #include <qstyleoption.h>
 #include <qapplication.h>
+#if QT_CONFIG(mainwindow)
 #include <qmainwindow.h>
+#endif
 #include <qfont.h>
+#if QT_CONFIG(groupbox)
 #include <qgroupbox.h>
+#endif
 #include <qpixmapcache.h>
+#if QT_CONFIG(scrollbar)
 #include <qscrollbar.h>
+#endif
+#if QT_CONFIG(spinbox)
 #include <qspinbox.h>
+#endif
 #if QT_CONFIG(abstractslider)
 #include <qabstractslider.h>
 #endif
+#if QT_CONFIG(slider)
 #include <qslider.h>
+#endif
+#if QT_CONFIG(splitter)
 #include <qsplitter.h>
+#endif
+#if QT_CONFIG(progressbar)
 #include <qprogressbar.h>
+#endif
+#if QT_CONFIG(wizard)
 #include <qwizard.h>
+#endif
 #include <qdrawutil.h>
 #include <private/qstylehelper_p.h>
 #include <private/qdrawhelper_p.h>
@@ -454,8 +472,10 @@ void QFusionStyle::drawPrimitive(PrimitiveElement elem,
             break;
         if (option->state & State_Open)
             drawPrimitive(PE_IndicatorArrowDown, option, painter, widget);
-        else
-            drawPrimitive(PE_IndicatorArrowRight, option, painter, widget);
+        else {
+            const bool reverse = (option->direction == Qt::RightToLeft);
+            drawPrimitive(reverse ? PE_IndicatorArrowLeft : PE_IndicatorArrowRight, option, painter, widget);
+        }
         break;
     }
 #if QT_CONFIG(tabbar)
@@ -766,7 +786,7 @@ void QFusionStyle::drawPrimitive(PrimitiveElement elem,
             painter->drawRect(rect);
 
             QColor checkMarkColor = option->palette.text().color().darker(120);
-            const int checkMarkPadding = QStyleHelper::dpiScaled(3);
+            const int checkMarkPadding = 1 + rect.width() * 0.2; // at least one pixel padding
 
             if (checkbox->state & State_NoChange) {
                 gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft());
@@ -780,18 +800,20 @@ void QFusionStyle::drawPrimitive(PrimitiveElement elem,
                 painter->drawRect(rect.adjusted(checkMarkPadding, checkMarkPadding, -checkMarkPadding, -checkMarkPadding));
 
             } else if (checkbox->state & (State_On)) {
-                QPen checkPen = QPen(checkMarkColor, QStyleHelper::dpiScaled(1.8));
+                qreal penWidth = QStyleHelper::dpiScaled(1.8);
+                penWidth = qMax(penWidth , 0.18 * rect.height());
+                penWidth = qMin(penWidth , 0.30 * rect.height());
+                QPen checkPen = QPen(checkMarkColor, penWidth);
                 checkMarkColor.setAlpha(210);
-                painter->translate(-1, 0.5);
+                painter->translate(-0.8, 0.5);
                 painter->setPen(checkPen);
                 painter->setBrush(Qt::NoBrush);
-                painter->translate(0.2, 0.0);
 
                 // Draw checkmark
                 QPainterPath path;
-                path.moveTo(2 + checkMarkPadding, rect.height() / 2.0);
+                path.moveTo(1.33 * checkMarkPadding, rect.height() / 2.0);
                 path.lineTo(rect.width() / 2.0, rect.height() - checkMarkPadding);
-                path.lineTo(rect.width() - checkMarkPadding - 0.5, checkMarkPadding);
+                path.lineTo(rect.width() - checkMarkPadding * 0.92, checkMarkPadding);
                 painter->drawPath(path.translated(rect.topLeft()));
             }
         }
@@ -988,11 +1010,9 @@ void QFusionStyle::drawPrimitive(PrimitiveElement elem,
         break;
     case PE_PanelMenu: {
         painter->save();
-        QColor menuBackground = option->palette.base().color().lighter(108);
+        const QBrush menuBackground = option->palette.base().color().lighter(108);
         QColor borderColor = option->palette.background().color().darker(160);
-        painter->setPen(borderColor);
-        painter->setBrush(menuBackground);
-        painter->drawRect(option->rect.adjusted(0, 0, -1, -1));
+        qDrawPlainRect(painter, option->rect, borderColor, 1, &menuBackground);
         painter->restore();
     }
         break;
@@ -1562,8 +1582,9 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
             bool enabled = menuItem->state & State_Enabled;
 
             bool ignoreCheckMark = false;
-            int checkcol = qMax(menuItem->maxIconWidth, 20);
-
+            const int checkColHOffset = windowsItemHMargin + windowsItemFrame - 1;
+            int checkcol = qMax(menuItem->rect.height() * 0.7,
+                                      qMax(menuItem->maxIconWidth * 1.0, dpiScaled(17))); // icon checkbox's highlihgt column width
             if (
 #if QT_CONFIG(combobox)
                 qobject_cast<const QComboBox*>(widget) ||
@@ -1573,7 +1594,9 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
 
             if (!ignoreCheckMark) {
                 // Check
-                QRect checkRect(option->rect.left() + 7, option->rect.center().y() - 6, 14, 14);
+                const int boxMargin = dpiScaled(4);
+                const int boxWidth = checkcol - 2 * boxMargin;
+                QRect checkRect(option->rect.left() + boxMargin + checkColHOffset, option->rect.center().y() - boxWidth/2 + 1, boxWidth, boxWidth);
                 checkRect = visualRect(menuItem->direction, menuItem->rect, checkRect);
                 if (checkable) {
                     if (menuItem->checkType & QStyleOptionMenuItem::Exclusive) {
@@ -1585,7 +1608,8 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
                             QPalette::ColorRole textRole = !enabled ? QPalette::Text:
                                                                       selected ? QPalette::HighlightedText : QPalette::ButtonText;
                             painter->setBrush(option->palette.brush( option->palette.currentColorGroup(), textRole));
-                            painter->drawEllipse(checkRect.adjusted(4, 4, -4, -4));
+                            const int adjustment = checkRect.height() * 0.3;
+                            painter->drawEllipse(checkRect.adjusted(adjustment, adjustment, -adjustment, -adjustment));
                         }
                     } else {
                         // Check box
@@ -1614,7 +1638,7 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
 
             QPainter *p = painter;
             QRect vCheckRect = visualRect(opt->direction, menuitem->rect,
-                                          QRect(menuitem->rect.x() + 4, menuitem->rect.y(),
+                                          QRect(menuitem->rect.x() + checkColHOffset, menuitem->rect.y(),
                                                 checkcol, menuitem->rect.height()));
             if (!menuItem->icon.isNull()) {
                 QIcon::Mode mode = dis ? QIcon::Disabled : QIcon::Normal;
@@ -1665,7 +1689,7 @@ void QFusionStyle::drawControl(ControlElement element, const QStyleOption *optio
                 discol = menuitem->palette.text().color();
                 p->setPen(discol);
             }
-            int xm = windowsItemFrame + checkcol + windowsItemHMargin + 2;
+            int xm = checkColHOffset + checkcol + windowsItemHMargin;
             int xpos = menuitem->rect.x() + xm;
 
             QRect textRect(xpos, y + windowsItemVMargin, w - xm - windowsRightBorder - tab + 1, h - 2 * windowsItemVMargin);
@@ -3712,7 +3736,6 @@ int QFusionStyle::styleHint(StyleHint hint, const QStyleOption *option, const QW
     case SH_ScrollView_FrameOnlyAroundContents:
     case SH_Menu_AllowActiveAndDisabled:
     case SH_MainWindow_SpaceBelowMenuBar:
-    case SH_DialogButtonBox_ButtonsHaveIcons:
     case SH_MessageBox_CenterButtons:
     case SH_RubberBand_Mask:
         return 0;
@@ -3727,7 +3750,7 @@ int QFusionStyle::styleHint(StyleHint hint, const QStyleOption *option, const QW
 
     case SH_MessageBox_TextInteractionFlags:
         return Qt::TextSelectableByMouse | Qt::LinksAccessibleByMouse;
-#ifndef QT_NO_WIZARD
+#if QT_CONFIG(wizard)
     case SH_WizardStyle:
         return QWizard::ClassicStyle;
 #endif

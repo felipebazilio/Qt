@@ -1,6 +1,7 @@
 #include <mbgl/util/run_loop.hpp>
 #include <mbgl/util/async_task.hpp>
 #include <mbgl/util/thread_local.hpp>
+#include <mbgl/actor/scheduler.hpp>
 
 #include <uv.h>
 
@@ -10,14 +11,7 @@
 
 namespace {
 
-using namespace mbgl::util;
-static ThreadLocal<RunLoop>& current = *new ThreadLocal<RunLoop>;
-
-#if UV_VERSION_MAJOR == 0 && UV_VERSION_MINOR <= 10
-void dummyCallback(uv_async_t*, int) {}
-#else
 void dummyCallback(uv_async_t*) {}
-#endif
 
 } // namespace
 
@@ -57,7 +51,8 @@ struct Watch {
 };
 
 RunLoop* RunLoop::Get() {
-    return current.get();
+    assert(static_cast<RunLoop*>(Scheduler::GetCurrent()));
+    return static_cast<RunLoop*>(Scheduler::GetCurrent());
 }
 
 class RunLoop::Impl {
@@ -84,13 +79,8 @@ public:
 RunLoop::RunLoop(Type type) : impl(std::make_unique<Impl>()) {
     switch (type) {
     case Type::New:
-#if UV_VERSION_MAJOR == 0 && UV_VERSION_MINOR <= 10
-        impl->loop = uv_loop_new();
-        if (impl->loop == nullptr) {
-#else
         impl->loop = new uv_loop_t;
         if (uv_loop_init(impl->loop) != 0) {
-#endif
             throw std::runtime_error("Failed to initialize loop.");
         }
         break;
@@ -107,12 +97,12 @@ RunLoop::RunLoop(Type type) : impl(std::make_unique<Impl>()) {
 
     impl->type = type;
 
-    current.set(this);
+    Scheduler::SetCurrent(this);
     impl->async = std::make_unique<AsyncTask>(std::bind(&RunLoop::process, this));
 }
 
 RunLoop::~RunLoop() {
-    current.set(nullptr);
+    Scheduler::SetCurrent(nullptr);
 
     // Close the dummy handle that we have
     // just to keep the main loop alive.
@@ -129,23 +119,21 @@ RunLoop::~RunLoop() {
     impl->async.reset();
     runOnce();
 
-#if UV_VERSION_MAJOR == 0 && UV_VERSION_MINOR <= 10
-    uv_loop_delete(impl->loop);
-#else
     if (uv_loop_close(impl->loop) == UV_EBUSY) {
-        throw std::runtime_error("Failed to close loop.");
+        assert(false && "Failed to close loop.");
     }
     delete impl->loop;
-#endif
 }
 
 LOOP_HANDLE RunLoop::getLoopHandle() {
-    return current.get()->impl->loop;
+    return Get()->impl->loop;
 }
 
 void RunLoop::push(std::shared_ptr<WorkTask> task) {
-    withMutex([&] { queue.push(std::move(task)); });
-    impl->async->send();
+    withMutex([&] {
+        queue.push(std::move(task));
+        impl->async->send();
+    });
 }
 
 void RunLoop::run() {

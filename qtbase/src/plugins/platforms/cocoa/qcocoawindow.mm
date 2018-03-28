@@ -89,6 +89,11 @@ static void qt_closePopups()
     }
 }
 
+
+// @compatibility_alias doesn't work with categories or their methods
+#define FullScreenProperty QT_MANGLE_NAMESPACE(FullScreenProperty)
+#define qt_fullScreen QT_MANGLE_NAMESPACE(qt_fullScreen)
+
 @interface NSWindow (FullScreenProperty)
 @property(readonly) BOOL qt_fullScreen;
 @end
@@ -1088,8 +1093,18 @@ void QCocoaWindow::setWindowFlags(Qt::WindowFlags flags)
         setWindowZoomButton(flags);
     }
 
-    if (m_nsWindow)
-        m_nsWindow.ignoresMouseEvents = flags & Qt::WindowTransparentForInput;
+    // Make window ignore mouse events if WindowTransparentForInput is set.
+    // Note that ignoresMouseEvents has a special initial state where events
+    // are ignored (passed through) based on window transparency, and that
+    // setting the property to false does not return us to that state. Instead,
+    // this makes the window capture all mouse events. Take care to only
+    // set the property if needed. FIXME: recreate window if needed or find
+    // some other way to implement WindowTransparentForInput.
+    if (m_nsWindow) {
+        bool ignoreMouse = flags & Qt::WindowTransparentForInput;
+        if (m_nsWindow.ignoresMouseEvents != ignoreMouse)
+            m_nsWindow.ignoresMouseEvents = ignoreMouse;
+    }
 
     m_windowFlags = flags;
 }
@@ -1877,6 +1892,21 @@ QCocoaNSWindow *QCocoaWindow::createNSWindow(bool shouldBeChildNSWindow, bool sh
 
     applyContentBorderThickness(window);
 
+    // Prevent CoreGraphics RGB32 -> RGB64 backing store conversions on deep color
+    // displays by forcing 8-bit components, unless a deep color format has been
+    // requested. This conversion uses significant CPU time.
+    QSurface::SurfaceType surfaceType = QPlatformWindow::window()->surfaceType();
+    bool usesCoreGraphics = surfaceType == QSurface::RasterSurface || surfaceType == QSurface::RasterGLSurface;
+    QSurfaceFormat surfaceFormat = QPlatformWindow::window()->format();
+    bool usesDeepColor = surfaceFormat.redBufferSize() > 8 ||
+                         surfaceFormat.greenBufferSize() > 8 ||
+                         surfaceFormat.blueBufferSize() > 8;
+    bool usesLayer = view().layer;
+    if (usesCoreGraphics && !usesDeepColor && !usesLayer) {
+        [window setDynamicDepthLimit:NO];
+        [window setDepthLimit:NSWindowDepthTwentyfourBitRGB];
+    }
+
     return window;
 }
 
@@ -2151,6 +2181,7 @@ void QCocoaWindow::applyContentBorderThickness(NSWindow *window)
     if (!m_drawContentBorderGradient) {
         [window setStyleMask:[window styleMask] & ~NSTexturedBackgroundWindowMask];
         [[[window contentView] superview] setNeedsDisplay:YES];
+        window.titlebarAppearsTransparent = NO;
         return;
     }
 
@@ -2175,6 +2206,7 @@ void QCocoaWindow::applyContentBorderThickness(NSWindow *window)
     int effectiveBottomContentBorderThickness = m_bottomContentBorderThickness;
 
     [window setStyleMask:[window styleMask] | NSTexturedBackgroundWindowMask];
+    window.titlebarAppearsTransparent = YES;
 
     [window setContentBorderThickness:effectiveTopContentBorderThickness forEdge:NSMaxYEdge];
     [window setAutorecalculatesContentBorderThickness:NO forEdge:NSMaxYEdge];

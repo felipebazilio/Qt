@@ -67,6 +67,7 @@
 #include "content/renderer/in_process_renderer_thread.h"
 #include "content/utility/in_process_utility_thread.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
+#include "net/base/port_util.h"
 #include "ui/events/event_switches.h"
 #include "ui/native_theme/native_theme_switches.h"
 #include "ui/gl/gl_switches.h"
@@ -132,21 +133,6 @@ bool usingANGLE()
 #endif
 }
 
-bool usingSoftwareDynamicGL()
-{
-    if (QCoreApplication::testAttribute(Qt::AA_UseSoftwareOpenGL))
-        return true;
-#if defined(Q_OS_WIN)
-    HMODULE handle = static_cast<HMODULE>(QOpenGLContext::openGLModuleHandle());
-    wchar_t path[MAX_PATH];
-    DWORD size = GetModuleFileName(handle, path, MAX_PATH);
-    QFileInfo openGLModule(QString::fromWCharArray(path, size));
-    return openGLModule.fileName() == QLatin1String("opengl32sw.dll");
-#else
-    return false;
-#endif
-}
-
 bool usingQtQuick2DRenderer()
 {
     const QStringList args = QGuiApplication::arguments();
@@ -182,6 +168,21 @@ void dummyGetPluginCallback(const std::vector<content::WebPluginInfo>&)
 } // namespace
 
 namespace QtWebEngineCore {
+
+bool usingSoftwareDynamicGL()
+{
+    if (QCoreApplication::testAttribute(Qt::AA_UseSoftwareOpenGL))
+        return true;
+#if defined(Q_OS_WIN)
+    HMODULE handle = static_cast<HMODULE>(QOpenGLContext::openGLModuleHandle());
+    wchar_t path[MAX_PATH];
+    DWORD size = GetModuleFileName(handle, path, MAX_PATH);
+    QFileInfo openGLModule(QString::fromWCharArray(path, size));
+    return openGLModule.fileName() == QLatin1String("opengl32sw.dll");
+#else
+    return false;
+#endif
+}
 
 void WebEngineContext::destroyBrowserContext()
 {
@@ -283,6 +284,9 @@ WebEngineContext::WebEngineContext()
         appArgs.append(QString::fromLocal8Bit(qgetenv(kChromiumFlagsEnv)).split(' '));
     }
 
+    bool enableWebGLSoftwareRendering =
+            appArgs.removeAll(QStringLiteral("--enable-webgl-software-rendering"));
+
     bool useEmbeddedSwitches = false;
 #if defined(QTWEBENGINE_EMBEDDED_SWITCHES)
     useEmbeddedSwitches = !appArgs.removeAll(QStringLiteral("--disable-embedded-switches"));
@@ -332,6 +336,17 @@ WebEngineContext::WebEngineContext()
     parsedCommandLine->AppendSwitch(switches::kDisablePepper3DImageChromium);
 #endif
 
+#if defined(Q_OS_WIN)
+    // This switch is used in Chromium's gl_context_wgl.cc file to determine whether to create
+    // an OpenGL Core Profile context. If the switch is not set, it would always try to create a
+    // Core Profile context, even if Qt uses a legacy profile, which causes
+    // "Could not share GL contexts" warnings, because it's not possible to share between Core and
+    // legacy profiles.
+    // Given that Core profile is not currently supported on Windows anyway, pass this switch to
+    // get rid of the warnings.
+    parsedCommandLine->AppendSwitch(switches::kDisableES3GLContext);
+#endif
+
     if (useEmbeddedSwitches) {
         // Inspired by the Android port's default switches
         if (!parsedCommandLine->HasSwitch(switches::kDisableOverlayScrollbar))
@@ -351,7 +366,20 @@ WebEngineContext::WebEngineContext()
 
     const char *glType = 0;
 #ifndef QT_NO_OPENGL
-    if (!usingANGLE() && !usingSoftwareDynamicGL() && !usingQtQuick2DRenderer()) {
+
+    bool tryGL =
+            !usingANGLE()
+            && (!usingSoftwareDynamicGL()
+#ifdef Q_OS_WIN
+                // If user requested WebGL support on Windows, instead of using Skia rendering to
+                // bitmaps, use software rendering via opengl32sw.dll. This might be less
+                // performant, but at least provides WebGL support.
+                || enableWebGLSoftwareRendering
+#endif
+                )
+            && !usingQtQuick2DRenderer();
+
+    if (tryGL) {
         if (qt_gl_global_share_context() && qt_gl_global_share_context()->isValid()) {
             // If the native handle is QEGLNativeContext try to use GL ES/2, if there is no native handle
             // assume we are using wayland and try GL ES/2, and finally Ozone demands GL ES/2 too.
@@ -389,8 +417,22 @@ WebEngineContext::WebEngineContext()
                     }
                 }
             } else {
-                if (!qt_gl_global_share_context()->isOpenGLES())
+                if (!qt_gl_global_share_context()->isOpenGLES()) {
+                    // Default to Desktop non-Core profile OpenGL.
                     glType = gl::kGLImplementationDesktopName;
+
+                    // Check if Core profile was requested and is supported.
+                    QSurfaceFormat globalSharedFormat = qt_gl_global_share_context()->format();
+                    if (globalSharedFormat.profile() == QSurfaceFormat::CoreProfile) {
+#ifdef Q_OS_MACOS
+                        glType = gl::kGLImplementationCoreProfileName;
+#else
+                        qWarning("An OpenGL Core Profile was requested, but it is not supported "
+                                 "on the current platform. Falling back to a non-Core profile. "
+                                 "Note that this might cause rendering issues.");
+#endif
+                    }
+                }
             }
         } else {
             qWarning("WebEngineContext used before QtWebEngine::initialize() or OpenGL context creation failed.");
@@ -429,6 +471,11 @@ WebEngineContext::WebEngineContext()
     MediaCaptureDevicesDispatcher::GetInstance();
 
     base::ThreadRestrictions::SetIOAllowed(true);
+
+    if (parsedCommandLine->HasSwitch(switches::kExplicitlyAllowedPorts)) {
+        std::string allowedPorts = parsedCommandLine->GetSwitchValueASCII(switches::kExplicitlyAllowedPorts);
+        net::SetExplicitlyAllowedPorts(allowedPorts);
+    }
 
 #if defined(ENABLE_PLUGINS)
     // Creating pepper plugins from the page (which calls PluginService::GetPluginInfoArray)

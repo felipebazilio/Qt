@@ -41,7 +41,7 @@
 #include <QtGui/QColor>
 #include <QtGui/private/qimage_p.h>
 #include <QtGui/private/qdrawhelper_p.h>
-#ifdef XCB_USE_RENDER
+#if QT_CONFIG(xcb_render)
 #include <xcb/render.h>
 // 'template' is used as a function argument name in xcb_renderutil.h
 #define template template_param
@@ -77,6 +77,16 @@ QImage::Format qt_xcb_imageFormatForVisual(QXcbConnection *connection, uint8_t d
     if (depth == 24 && format->bits_per_pixel == 32 && visual->red_mask == 0xff0000
         && visual->green_mask == 0xff00 && visual->blue_mask == 0xff)
         return QImage::Format_RGB32;
+
+    if (QSysInfo::ByteOrder == QSysInfo::LittleEndian) {
+        if (depth == 24 && format->bits_per_pixel == 32 && visual->blue_mask == 0xff0000
+            && visual->green_mask == 0xff00 && visual->red_mask == 0xff)
+            return QImage::Format_RGBX8888;
+    } else {
+        if (depth == 24 && format->bits_per_pixel == 32 && visual->blue_mask == 0xff00
+            && visual->green_mask == 0xff0000 && visual->red_mask == 0xff000000)
+            return QImage::Format_RGBX8888;
+    }
 
     if (depth == 16 && format->bits_per_pixel == 16 && visual->red_mask == 0xf800
         && visual->green_mask == 0x7e0 && visual->blue_mask == 0x1f)
@@ -128,8 +138,9 @@ QPixmap qt_xcb_pixmapFromXPixmap(QXcbConnection *connection, xcb_pixmap_t pixmap
                     }
                     break;
                 }
-                case QImage::Format_RGB32: // fall-through
-                case QImage::Format_ARGB32_Premultiplied: {
+                case QImage::Format_RGB32:
+                case QImage::Format_ARGB32_Premultiplied:
+                case QImage::Format_RGBX8888: {
                     uint *p = (uint*)image.scanLine(i);
                     uint *end = p + image.width();
                     while (p < end) {
@@ -146,7 +157,7 @@ QPixmap qt_xcb_pixmapFromXPixmap(QXcbConnection *connection, xcb_pixmap_t pixmap
         }
 
         // fix-up alpha channel
-        if (format == QImage::Format_RGB32) {
+        if (format == QImage::Format_RGB32 || format == QImage::Format_RGBX8888) {
             QRgb *p = (QRgb *)image.bits();
             for (int y = 0; y < height; ++y) {
                 for (int x = 0; x < width; ++x)
@@ -199,7 +210,7 @@ xcb_pixmap_t qt_xcb_XPixmapFromBitmap(QXcbScreen *screen, const QImage &image)
 xcb_cursor_t qt_xcb_createCursorXRender(QXcbScreen *screen, const QImage &image,
                                         const QPoint &spot)
 {
-#ifdef XCB_USE_RENDER
+#if QT_CONFIG(xcb_render)
     xcb_connection_t *conn = screen->xcb_connection();
     const int w = image.width();
     const int h = image.height();

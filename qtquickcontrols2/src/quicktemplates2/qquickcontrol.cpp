@@ -48,6 +48,7 @@
 #include "qquickpopup_p.h"
 #include "qquickpopupitem_p_p.h"
 #include "qquickapplicationwindow_p.h"
+#include "qquickdeferredexecute_p_p.h"
 
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/qpa/qplatformtheme.h>
@@ -280,6 +281,8 @@ void QQuickControlPrivate::resizeContent()
 
 QQuickItem *QQuickControlPrivate::getContentItem()
 {
+    if (!contentItem)
+        executeContentItem();
     return contentItem;
 }
 
@@ -289,8 +292,11 @@ void QQuickControlPrivate::setContentItem_helper(QQuickItem *item, bool notify)
     if (contentItem == item)
         return;
 
+    if (!contentItem.isExecuting())
+        cancelContentItem();
+
     q->contentItemChange(item, contentItem);
-    destroyDelegate(contentItem, q);
+    delete contentItem;
     contentItem = item;
 
     if (item) {
@@ -300,7 +306,7 @@ void QQuickControlPrivate::setContentItem_helper(QQuickItem *item, bool notify)
             resizeContent();
     }
 
-    if (notify)
+    if (notify && !contentItem.isExecuting())
         emit q->contentItemChanged();
 }
 
@@ -569,8 +575,9 @@ void QQuickControl::itemChange(QQuickItem::ItemChange change, const QQuickItem::
             setHovered(false);
 #endif
         break;
+    case ItemSceneChange:
     case ItemParentHasChanged:
-        if (value.item) {
+        if ((change == ItemParentHasChanged && value.item) || (change == ItemSceneChange && value.window)) {
             d->resolveFont();
             if (!d->hasLocale)
                 d->updateLocale(QQuickControlPrivate::calcLocale(d->parentItem), false); // explicit=false
@@ -932,6 +939,46 @@ QLocale QQuickControlPrivate::calcLocale(const QQuickItem *item)
     return QLocale();
 }
 
+static inline QString contentItemName() { return QStringLiteral("contentItem"); }
+
+void QQuickControlPrivate::cancelContentItem()
+{
+    Q_Q(QQuickControl);
+    quickCancelDeferred(q, contentItemName());
+}
+
+void QQuickControlPrivate::executeContentItem(bool complete)
+{
+    Q_Q(QQuickControl);
+    if (contentItem.wasExecuted())
+        return;
+
+    if (!contentItem || complete)
+        quickBeginDeferred(q, contentItemName(), contentItem);
+    if (complete)
+        quickCompleteDeferred(q, contentItemName(), contentItem);
+}
+
+static inline QString backgroundName() { return QStringLiteral("background"); }
+
+void QQuickControlPrivate::cancelBackground()
+{
+    Q_Q(QQuickControl);
+    quickCancelDeferred(q, backgroundName());
+}
+
+void QQuickControlPrivate::executeBackground(bool complete)
+{
+    Q_Q(QQuickControl);
+    if (background.wasExecuted())
+        return;
+
+    if (!background || complete)
+        quickBeginDeferred(q, backgroundName(), background);
+    if (complete)
+        quickCompleteDeferred(q, backgroundName(), background);
+}
+
 /*
     Cancels incubation recursively to avoid "Object destroyed during incubation" (QTBUG-50992)
 */
@@ -1213,7 +1260,9 @@ void QQuickControl::setWheelEnabled(bool enabled)
 */
 QQuickItem *QQuickControl::background() const
 {
-    Q_D(const QQuickControl);
+    QQuickControlPrivate *d = const_cast<QQuickControlPrivate *>(d_func());
+    if (!d->background)
+        d->executeBackground();
     return d->background;
 }
 
@@ -1223,7 +1272,10 @@ void QQuickControl::setBackground(QQuickItem *background)
     if (d->background == background)
         return;
 
-    QQuickControlPrivate::destroyDelegate(d->background, this);
+    if (!d->background.isExecuting())
+        d->cancelBackground();
+
+    delete d->background;
     d->background = background;
     if (background) {
         background->setParentItem(this);
@@ -1232,7 +1284,8 @@ void QQuickControl::setBackground(QQuickItem *background)
         if (isComponentComplete())
             d->resizeBackground();
     }
-    emit backgroundChanged();
+    if (!d->background.isExecuting())
+        emit backgroundChanged();
 }
 
 /*!
@@ -1287,6 +1340,8 @@ void QQuickControl::classBegin()
 void QQuickControl::componentComplete()
 {
     Q_D(QQuickControl);
+    d->executeBackground(true);
+    d->executeContentItem(true);
     QQuickItem::componentComplete();
     d->resizeContent();
     if (!d->hasLocale)
@@ -1374,13 +1429,8 @@ void QQuickControl::touchEvent(QTouchEvent *event)
     Q_D(QQuickControl);
     switch (event->type()) {
     case QEvent::TouchBegin:
-        for (const QTouchEvent::TouchPoint &point : event->touchPoints()) {
-            if (d->acceptTouch(point))
-                d->handlePress(point.pos());
-        }
-        break;
-
     case QEvent::TouchUpdate:
+    case QEvent::TouchEnd:
         for (const QTouchEvent::TouchPoint &point : event->touchPoints()) {
             if (!d->acceptTouch(point))
                 continue;
@@ -1398,13 +1448,6 @@ void QQuickControl::touchEvent(QTouchEvent *event)
             default:
                 break;
             }
-        }
-        break;
-
-    case QEvent::TouchEnd:
-        for (const QTouchEvent::TouchPoint &point : event->touchPoints()) {
-            if (d->acceptTouch(point))
-                d->handleRelease(point.pos());
         }
         break;
 

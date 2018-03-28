@@ -142,6 +142,9 @@ private slots:
     void backingStore();
     void touchDrag();
     void mouseDrag();
+    void dontCrashOnMultipleCommits();
+    void hiddenTransientParent();
+    void hiddenPopupParent();
 
 private:
     MockCompositor *compositor;
@@ -331,6 +334,74 @@ void tst_WaylandClient::mouseDrag()
     compositor->sendDataDeviceDrop(surface);
     compositor->sendDataDeviceLeave(surface);
     QTRY_VERIFY(window.dragStarted);
+}
+
+void tst_WaylandClient::dontCrashOnMultipleCommits()
+{
+    auto window = new TestWindow();
+    window->show();
+
+    QRect rect(QPoint(), window->size());
+
+    QBackingStore backingStore(window);
+    backingStore.resize(rect.size());
+    backingStore.beginPaint(rect);
+    QPainter p(backingStore.paintDevice());
+    p.fillRect(rect, Qt::magenta);
+    p.end();
+    backingStore.endPaint();
+
+    backingStore.flush(rect);
+    backingStore.flush(rect);
+    backingStore.flush(rect);
+
+    compositor->processWaylandEvents();
+
+    delete window;
+
+    QTRY_VERIFY(!compositor->surface());
+}
+
+void tst_WaylandClient::hiddenTransientParent()
+{
+    QWindow parent;
+    QWindow transient;
+
+    transient.setTransientParent(&parent);
+
+    parent.show();
+    QTRY_VERIFY(compositor->surface());
+
+    parent.hide();
+    QTRY_VERIFY(!compositor->surface());
+
+    transient.show();
+    QTRY_VERIFY(compositor->surface());
+}
+
+void tst_WaylandClient::hiddenPopupParent()
+{
+    TestWindow toplevel;
+    toplevel.show();
+
+    // wl_shell relies on a mouse event in order to send a serial and seat
+    // with the set_popup request.
+    QSharedPointer<MockSurface> surface;
+    QTRY_VERIFY(surface = compositor->surface());
+    QPoint mousePressPos(16, 16);
+    QCOMPARE(toplevel.mousePressEventCount, 0);
+    compositor->sendMousePress(surface, mousePressPos);
+    QTRY_COMPARE(toplevel.mousePressEventCount, 1);
+
+    QWindow popup;
+    popup.setTransientParent(&toplevel);
+    popup.setFlag(Qt::Popup, true);
+
+    toplevel.hide();
+    QTRY_VERIFY(!compositor->surface());
+
+    popup.show();
+    QTRY_VERIFY(compositor->surface());
 }
 
 int main(int argc, char **argv)

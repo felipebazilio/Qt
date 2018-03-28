@@ -10,7 +10,7 @@ include(../shared/debugutil.pri)
 
 TESTDATA = data/*
 
-QT += core qml testlib gui-private core-private
+QT += core qml testlib testlib-private gui-private core-private
 
 OTHER_FILES += \
     data/pixmapCacheTest.qml \
@@ -21,4 +21,5 @@ OTHER_FILES += \
     data/TestImage_2x2.png \
     data/signalSourceLocation.qml \
     data/javascript.qml \
-    data/timer.qml
+    data/timer.qml \
+    data/memory.qml

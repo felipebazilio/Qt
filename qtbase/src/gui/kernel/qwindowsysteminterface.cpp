@@ -265,12 +265,19 @@ void QWindowSystemInterface::handleWindowScreenChanged(QWindow *window, QScreen 
     QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
 }
 
-void QWindowSystemInterface::handleApplicationStateChanged(Qt::ApplicationState newState, bool forcePropagate)
+QT_DEFINE_QPA_EVENT_HANDLER(void, handleSafeAreaMarginsChanged, QWindow *window)
+{
+    QWindowSystemInterfacePrivate::SafeAreaMarginsChangedEvent *e =
+        new QWindowSystemInterfacePrivate::SafeAreaMarginsChangedEvent(window);
+    QWindowSystemInterfacePrivate::handleWindowSystemEvent<Delivery>(e);
+}
+
+QT_DEFINE_QPA_EVENT_HANDLER(void, handleApplicationStateChanged, Qt::ApplicationState newState, bool forcePropagate)
 {
     Q_ASSERT(QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::ApplicationState));
     QWindowSystemInterfacePrivate::ApplicationStateChangedEvent *e =
         new QWindowSystemInterfacePrivate::ApplicationStateChangedEvent(newState, forcePropagate);
-    QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
+    QWindowSystemInterfacePrivate::handleWindowSystemEvent<Delivery>(e);
 }
 
 /*!
@@ -621,8 +628,8 @@ QList<QWindowSystemInterface::TouchPoint>
         p.area = QHighDpi::toNativePixels(pt.screenRect(), window);
         p.pressure = pt.pressure();
         p.state = pt.state();
-        p.velocity = pt.velocity();
-        p.rawPositions = pt.rawScreenPositions();
+        p.velocity = QHighDpi::toNativePixels(pt.velocity(), window);
+        p.rawPositions = QHighDpi::toNativePixels(pt.rawScreenPositions(), window);
         newList.append(p);
     }
     return newList;
@@ -860,7 +867,7 @@ void QWindowSystemInterface::handleContextMenuEvent(QWindow *window, bool mouseT
 }
 #endif
 
-#ifndef QT_NO_WHATSTHIS
+#if QT_CONFIG(whatsthis)
 void QWindowSystemInterface::handleEnterWhatsThisEvent()
 {
     QWindowSystemInterfacePrivate::WindowSystemEvent *e =

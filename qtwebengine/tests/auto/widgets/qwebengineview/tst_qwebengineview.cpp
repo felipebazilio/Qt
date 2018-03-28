@@ -34,6 +34,7 @@
 #include <qstackedlayout.h>
 #include <qtemporarydir.h>
 #include <QCompleter>
+#include <QLabel>
 #include <QLineEdit>
 #include <QHBoxLayout>
 #include <QQuickItem>
@@ -145,6 +146,8 @@ private Q_SLOTS:
     void imeCompositionQueryEvent_data();
     void imeCompositionQueryEvent();
     void newlineInTextarea();
+
+    void mouseLeave();
 };
 
 // This will be called before the first test function is executed.
@@ -447,16 +450,25 @@ void tst_QWebEngineView::unhandledKeyEventPropagation()
     QTRY_COMPARE(parentWidget.releaseEvents.size(), 3);
     QCOMPARE(evaluateJavaScriptSync(webView.page(), "document.activeElement.id").toString(), QStringLiteral("second_div"));
 
+    // Focus the button and press 'y'.
+    evaluateJavaScriptSync(webView.page(), "document.getElementById('submit_button').focus()");
+    QTRY_COMPARE(evaluateJavaScriptSync(webView.page(), "document.activeElement.id").toString(), QStringLiteral("submit_button"));
+    QTest::sendKeyEvent(QTest::Press, webView.focusProxy(), Qt::Key_Y, 'y', Qt::NoModifier);
+    QTest::sendKeyEvent(QTest::Release, webView.focusProxy(), Qt::Key_Y, 'y', Qt::NoModifier);
+    QTRY_COMPARE(parentWidget.releaseEvents.size(), 4);
+
     // The page will consume the Tab key to change focus between elements while the arrow
     // keys won't be used.
-    QCOMPARE(parentWidget.pressEvents.size(), 2);
+    QCOMPARE(parentWidget.pressEvents.size(), 3);
     QCOMPARE(parentWidget.pressEvents[0].key(), (int)Qt::Key_Right);
     QCOMPARE(parentWidget.pressEvents[1].key(), (int)Qt::Key_Left);
+    QCOMPARE(parentWidget.pressEvents[2].key(), (int)Qt::Key_Y);
 
     // Key releases will all come back unconsumed.
     QCOMPARE(parentWidget.releaseEvents[0].key(), (int)Qt::Key_Right);
     QCOMPARE(parentWidget.releaseEvents[1].key(), (int)Qt::Key_Tab);
     QCOMPARE(parentWidget.releaseEvents[2].key(), (int)Qt::Key_Left);
+    QCOMPARE(parentWidget.releaseEvents[3].key(), (int)Qt::Key_Y);
 }
 
 void tst_QWebEngineView::horizontalScrollbarTest()
@@ -1800,12 +1812,36 @@ void tst_QWebEngineView::emptyInputMethodEvent()
     QEXPECT_FAIL("", "https://bugreports.qt.io/browse/QTBUG-53134", Continue);
     QCOMPARE(selectionChangedSpy.count(), 1);
 
-    // Send empty QInputMethodEvent
+    // 1. Empty input method event does not clear text
     QInputMethodEvent emptyEvent;
     QApplication::sendEvent(view.focusProxy(), &emptyEvent);
 
     QString inputValue = evaluateJavaScriptSync(view.page(), "document.getElementById('input1').value").toString();
-    QCOMPARE(inputValue, QString("QtWebEngine"));
+    QTRY_COMPARE(inputValue, QStringLiteral("QtWebEngine"));
+    QTRY_COMPARE(view.focusProxy()->inputMethodQuery(Qt::ImSurroundingText).toString(), QStringLiteral("QtWebEngine"));
+
+    // Reset: clear input field
+    evaluateJavaScriptSync(view.page(), "var inputEle = document.getElementById('input1').value = ''");
+    QTRY_VERIFY(evaluateJavaScriptSync(view.page(), "document.getElementById('input1').value").toString().isEmpty());
+    QTRY_VERIFY(view.focusProxy()->inputMethodQuery(Qt::ImSurroundingText).toString().isEmpty());
+
+    // 2. Cancel IME composition with empty input method event
+    // Start IME composition
+    QList<QInputMethodEvent::Attribute> attributes;
+    QInputMethodEvent eventComposition("a", attributes);
+    QApplication::sendEvent(view.focusProxy(), &eventComposition);
+    QTRY_COMPARE(evaluateJavaScriptSync(view.page(), "document.getElementById('input1').value").toString(), QStringLiteral("a"));
+    QTRY_VERIFY(view.focusProxy()->inputMethodQuery(Qt::ImSurroundingText).toString().isEmpty());
+
+    // Cancel IME composition
+    QApplication::sendEvent(view.focusProxy(), &emptyEvent);
+    QTRY_VERIFY(evaluateJavaScriptSync(view.page(), "document.getElementById('input1').value").toString().isEmpty());
+    QTRY_VERIFY(view.focusProxy()->inputMethodQuery(Qt::ImSurroundingText).toString().isEmpty());
+
+    // Try key press after cancelled IME composition
+    QTest::keyClick(view.focusProxy(), Qt::Key_B);
+    QTRY_COMPARE(evaluateJavaScriptSync(view.page(), "document.getElementById('input1').value").toString(), QStringLiteral("b"));
+    QTRY_COMPARE(view.focusProxy()->inputMethodQuery(Qt::ImSurroundingText).toString(), QStringLiteral("b"));
 }
 
 void tst_QWebEngineView::imeComposition()
@@ -2119,14 +2155,16 @@ void tst_QWebEngineView::imeCompositionQueryEvent()
     QObject *input = nullptr;
 
     QFETCH(QString, receiverObjectName);
-    if (receiverObjectName == "focusObject")
+    if (receiverObjectName == "focusObject") {
+        QTRY_VERIFY(qApp->focusObject());
         input = qApp->focusObject();
-    else if (receiverObjectName == "focusProxy")
+    } else if (receiverObjectName == "focusProxy") {
+        QTRY_VERIFY(view.focusProxy());
         input = view.focusProxy();
-    else if (receiverObjectName == "focusWidget")
+    } else if (receiverObjectName == "focusWidget") {
+        QTRY_VERIFY(view.focusWidget());
         input = view.focusWidget();
-
-    QVERIFY(input);
+    }
 
     QInputMethodQueryEvent srrndTextQuery(Qt::ImSurroundingText);
     QInputMethodQueryEvent cursorPosQuery(Qt::ImCursorPosition);
@@ -2170,6 +2208,56 @@ void tst_QWebEngineView::imeCompositionQueryEvent()
     QTRY_COMPARE(srrndTextQuery.value(Qt::ImSurroundingText).toString(), QString("composition"));
     QTRY_COMPARE(cursorPosQuery.value(Qt::ImCursorPosition).toInt(), 11);
     QTRY_COMPARE(anchorPosQuery.value(Qt::ImAnchorPosition).toInt(), 11);
+}
+
+void tst_QWebEngineView::mouseLeave()
+{
+    QScopedPointer<QWidget> containerWidget(new QWidget);
+
+    QLabel *label = new QLabel(containerWidget.data());
+    label->setStyleSheet("background-color: red;");
+    label->setSizePolicy(QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed));
+    label->setMinimumHeight(100);
+
+    QWebEngineView *view = new QWebEngineView(containerWidget.data());
+    view->setSizePolicy(QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed));
+    view->setMinimumHeight(100);
+
+    QVBoxLayout *layout = new QVBoxLayout;
+    layout->setAlignment(Qt::AlignTop);
+    layout->setSpacing(0);
+    layout->setMargin(0);
+    layout->addWidget(label);
+    layout->addWidget(view);
+    containerWidget->setLayout(layout);
+    containerWidget->show();
+    QVERIFY(QTest::qWaitForWindowExposed(containerWidget.data()));
+    QTest::mouseMove(containerWidget->windowHandle(), QPoint(0, 0));
+
+    auto innerText = [view]() -> QString {
+        return evaluateJavaScriptSync(view->page(), "document.getElementById('testDiv').innerText").toString();
+    };
+
+    QSignalSpy loadFinishedSpy(view, SIGNAL(loadFinished(bool)));
+    view->setHtml("<html>"
+                  "<head><script>"
+                  "function init() {"
+                  " var div = document.getElementById('testDiv');"
+                  " div.onmouseenter = function(e) { div.innerText = 'Mouse IN' };"
+                  " div.onmouseleave = function(e) { div.innerText = 'Mouse OUT' };"
+                  "}"
+                  "</script></head>"
+                  "<body onload='init()' style='margin: 0px; padding: 0px'>"
+                  " <div id='testDiv' style='width: 100%; height: 100%; background-color: green' />"
+                  "</body>"
+                  "</html>");
+    QVERIFY(loadFinishedSpy.wait());
+    QVERIFY(innerText().isEmpty());
+
+    QTest::mouseMove(containerWidget->windowHandle(), QPoint(50, 150));
+    QTRY_COMPARE(innerText(), QStringLiteral("Mouse IN"));
+    QTest::mouseMove(containerWidget->windowHandle(), QPoint(50, 50));
+    QTRY_COMPARE(innerText(), QStringLiteral("Mouse OUT"));
 }
 
 QTEST_MAIN(tst_QWebEngineView)

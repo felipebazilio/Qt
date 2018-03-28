@@ -260,6 +260,7 @@ QT_BEGIN_NAMESPACE
 QCocoaMenu::QCocoaMenu() :
     m_attachedItem(0),
     m_tag(0),
+    m_updateTimer(0),
     m_enabled(true),
     m_parentEnabled(true),
     m_visible(true),
@@ -327,6 +328,13 @@ void QCocoaMenu::insertMenuItem(QPlatformMenuItem *menuItem, QPlatformMenuItem *
     }
 
     insertNative(cocoaItem, beforeItem);
+
+    // Empty menus on a menubar are hidden by default. If the menu gets
+    // added to the menubar before it contains any item, we need to sync.
+    if (isVisible() && attachedItem().hidden) {
+        if (auto *mb = qobject_cast<QCocoaMenuBar *>(menuParent()))
+            mb->syncMenu(this);
+    }
 }
 
 void QCocoaMenu::insertNative(QCocoaMenuItem *item, QCocoaMenuItem *beforeItem)
@@ -410,7 +418,27 @@ QCocoaMenuItem *QCocoaMenu::itemOrNull(int index) const
     return m_menuItems.at(index);
 }
 
+void QCocoaMenu::scheduleUpdate()
+{
+    if (!m_updateTimer)
+        m_updateTimer = startTimer(0);
+}
+
+void QCocoaMenu::timerEvent(QTimerEvent *e)
+{
+    if (e->timerId() == m_updateTimer) {
+        killTimer(m_updateTimer);
+        m_updateTimer = 0;
+        [m_nativeMenu update];
+    }
+}
+
 void QCocoaMenu::syncMenuItem(QPlatformMenuItem *menuItem)
+{
+    syncMenuItem_helper(menuItem, false /*menubarUpdate*/);
+}
+
+void QCocoaMenu::syncMenuItem_helper(QPlatformMenuItem *menuItem, bool menubarUpdate)
 {
     QMacAutoReleasePool pool;
     QCocoaMenuItem *cocoaItem = static_cast<QCocoaMenuItem *>(menuItem);
@@ -421,8 +449,9 @@ void QCocoaMenu::syncMenuItem(QPlatformMenuItem *menuItem)
 
     const bool wasMerged = cocoaItem->isMerged();
     NSMenuItem *oldItem = cocoaItem->nsItem();
+    NSMenuItem *syncedItem = cocoaItem->sync();
 
-    if (cocoaItem->sync() != oldItem) {
+    if (syncedItem != oldItem) {
         // native item was changed for some reason
         if (oldItem) {
             if (wasMerged) {
@@ -436,10 +465,18 @@ void QCocoaMenu::syncMenuItem(QPlatformMenuItem *menuItem)
         QCocoaMenuItem* beforeItem = itemOrNull(m_menuItems.indexOf(cocoaItem) + 1);
         insertNative(cocoaItem, beforeItem);
     } else {
-        // Force NSMenuValidation to kick in. This is needed e.g.
+        // Schedule NSMenuValidation to kick in. This is needed e.g.
         // when an item's enabled state changes after menuWillOpen:
-        [m_nativeMenu update];
+        scheduleUpdate();
     }
+
+    // This may be a good moment to attach this item's eventual submenu to the
+    // synced item, but only on the condition we're all currently hooked to the
+    // menunbar. A good indicator of this being the right moment is knowing that
+    // we got called from QCocoaMenuBar::updateMenuBarImmediately().
+    if (menubarUpdate)
+        if (QCocoaMenu *submenu = cocoaItem->menu())
+            submenu->setAttachedItem(syncedItem);
 }
 
 void QCocoaMenu::syncSeparatorsCollapsible(bool enable)

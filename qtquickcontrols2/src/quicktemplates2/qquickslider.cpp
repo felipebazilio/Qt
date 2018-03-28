@@ -36,6 +36,7 @@
 
 #include "qquickslider_p.h"
 #include "qquickcontrol_p_p.h"
+#include "qquickdeferredexecute_p_p.h"
 
 #include <QtQuick/private/qquickwindow_p.h>
 
@@ -112,6 +113,9 @@ public:
     void handleRelease(const QPointF &point) override;
     void handleUngrab() override;
 
+    void cancelHandle();
+    void executeHandle(bool complete = false);
+
     qreal from;
     qreal to;
     qreal value;
@@ -122,7 +126,7 @@ public:
     QPointF pressPoint;
     Qt::Orientation orientation;
     QQuickSlider::SnapMode snapMode;
-    QQuickItem *handle;
+    QQuickDeferredPointer<QQuickItem> handle;
 };
 
 qreal QQuickSliderPrivate::snapPosition(qreal position) const
@@ -233,6 +237,26 @@ void QQuickSliderPrivate::handleUngrab()
     QQuickControlPrivate::handleUngrab();
     pressPoint = QPointF();
     q->setPressed(false);
+}
+
+static inline QString handleName() { return QStringLiteral("handle"); }
+
+void QQuickSliderPrivate::cancelHandle()
+{
+    Q_Q(QQuickSlider);
+    quickCancelDeferred(q, handleName());
+}
+
+void QQuickSliderPrivate::executeHandle(bool complete)
+{
+    Q_Q(QQuickSlider);
+    if (handle.wasExecuted())
+        return;
+
+    if (!handle || complete)
+        quickBeginDeferred(q, handleName(), handle);
+    if (complete)
+        quickCompleteDeferred(q, handleName(), handle);
 }
 
 QQuickSlider::QQuickSlider(QQuickItem *parent)
@@ -430,33 +454,6 @@ void QQuickSlider::setSnapMode(SnapMode mode)
 }
 
 /*!
-    \since QtQuick.Controls 2.2 (Qt 5.9)
-    \qmlproperty bool QtQuick.Controls::Slider::live
-
-    This property holds whether the slider provides live updates for the \l value
-    property while the handle is dragged.
-
-    The default value is \c true.
-
-    \sa value, valueAt()
-*/
-bool QQuickSlider::live() const
-{
-    Q_D(const QQuickSlider);
-    return d->live;
-}
-
-void QQuickSlider::setLive(bool live)
-{
-    Q_D(QQuickSlider);
-    if (d->live == live)
-        return;
-
-    d->live = live;
-    emit liveChanged();
-}
-
-/*!
     \qmlproperty bool QtQuick.Controls::Slider::pressed
 
     This property holds whether the slider is pressed.
@@ -512,7 +509,9 @@ void QQuickSlider::setOrientation(Qt::Orientation orientation)
 */
 QQuickItem *QQuickSlider::handle() const
 {
-    Q_D(const QQuickSlider);
+    QQuickSliderPrivate *d = const_cast<QQuickSliderPrivate *>(d_func());
+    if (!d->handle)
+        d->executeHandle();
     return d->handle;
 }
 
@@ -522,11 +521,15 @@ void QQuickSlider::setHandle(QQuickItem *handle)
     if (d->handle == handle)
         return;
 
-    QQuickControlPrivate::destroyDelegate(d->handle, this);
+    if (!d->handle.isExecuting())
+        d->cancelHandle();
+
+    delete d->handle;
     d->handle = handle;
     if (handle && !handle->parentItem())
         handle->setParentItem(this);
-    emit handleChanged();
+    if (!d->handle.isExecuting())
+        emit handleChanged();
 }
 
 /*!
@@ -540,7 +543,37 @@ void QQuickSlider::setHandle(QQuickItem *handle)
 qreal QQuickSlider::valueAt(qreal position) const
 {
     Q_D(const QQuickSlider);
-    return d->from + (d->to - d->from) * position;
+    const qreal value = (d->to - d->from) * position;
+    if (qFuzzyIsNull(d->stepSize))
+        return d->from + value;
+    return d->from + qRound(value / d->stepSize) * d->stepSize;
+}
+
+/*!
+    \since QtQuick.Controls 2.2 (Qt 5.9)
+    \qmlproperty bool QtQuick.Controls::Slider::live
+
+    This property holds whether the slider provides live updates for the \l value
+    property while the handle is dragged.
+
+    The default value is \c true.
+
+    \sa value, valueAt()
+*/
+bool QQuickSlider::live() const
+{
+    Q_D(const QQuickSlider);
+    return d->live;
+}
+
+void QQuickSlider::setLive(bool live)
+{
+    Q_D(QQuickSlider);
+    if (d->live == live)
+        return;
+
+    d->live = live;
+    emit liveChanged();
 }
 
 /*!
@@ -701,6 +734,7 @@ void QQuickSlider::mirrorChange()
 void QQuickSlider::componentComplete()
 {
     Q_D(QQuickSlider);
+    d->executeHandle(true);
     QQuickControl::componentComplete();
     setValue(d->value);
     d->updatePosition();

@@ -47,7 +47,7 @@ private:
      */
     void ensureResource(const Resource&, std::function<void (Response)> = {});
     bool checkTileCountLimit(const Resource& resource);
-    
+
     int64_t id;
     OfflineRegionDefinition definition;
     OfflineDatabase& offlineDatabase;
@@ -60,7 +60,7 @@ private:
     std::deque<Resource> resourcesRemaining;
 
     void queueResource(Resource);
-    void queueTiles(SourceType, uint16_t tileSize, const Tileset&);
+    void queueTiles(style::SourceType, uint16_t tileSize, const Tileset&);
 };
 
 } // namespace mbgl

@@ -40,6 +40,7 @@
 #include "qlowenergycontroller_p.h"
 
 #include <QtCore/qfunctions_winrt.h>
+#include <QtCore/QtEndian>
 #include <QtCore/QLoggingCategory>
 #include <private/qeventdispatcher_winrt_p.h>
 
@@ -399,7 +400,17 @@ void QLowEnergyControllerPrivate::connectToDevice()
             Q_ASSERT_SUCCEEDED(hr);
             ComPtr<IGattReadResult> result;
             hr = QWinRTFunctions::await(op, result.GetAddressOf());
-            Q_ASSERT_SUCCEEDED(hr);
+            if (hr == E_INVALIDARG) {
+                // E_INVALIDARG happens when user tries to connect to a device that was paired
+                // before but is not available.
+                qCDebug(QT_BT_WINRT) << "Could not obtain characteristic read result that triggers"
+                                        "device connection. Is the device reachable?";
+                setError(QLowEnergyController::ConnectionError);
+                setState(QLowEnergyController::UnconnectedState);
+                return;
+            } else {
+                Q_ASSERT_SUCCEEDED(hr);
+            }
             ComPtr<ABI::Windows::Storage::Streams::IBuffer> buffer;
             hr = result->get_Value(&buffer);
             Q_ASSERT_SUCCEEDED(hr);
@@ -488,7 +499,9 @@ void QLowEnergyControllerPrivate::obtainIncludedServices(QSharedPointer<QLowEner
     Q_ASSERT_SUCCEEDED(hr);
     ComPtr<IVectorView<GattDeviceService *>> includedServices;
     hr = service2->GetAllIncludedServices(&includedServices);
-    Q_ASSERT_SUCCEEDED(hr);
+    // Some devices return ERROR_ACCESS_DISABLED_BY_POLICY
+    if (FAILED(hr))
+        return;
 
     uint count;
     hr = includedServices->get_Size(&count);
@@ -587,7 +600,12 @@ void QLowEnergyControllerPrivate::discoverServiceDetails(const QBluetoothUuid &s
     Q_ASSERT_SUCCEEDED(hr);
     ComPtr<IVectorView<GattDeviceService *>> deviceServices;
     hr = deviceService2->GetAllIncludedServices(&deviceServices);
-    Q_ASSERT_SUCCEEDED(hr);
+    if (FAILED(hr)) { // ERROR_ACCESS_DISABLED_BY_POLICY
+        qCDebug(QT_BT_WINRT) << "Could not obtain included services list for" << service;
+        pointer->setError(QLowEnergyService::UnknownError);
+        pointer->setState(QLowEnergyService::InvalidService);
+        return;
+    }
     uint serviceCount;
     hr = deviceServices->get_Size(&serviceCount);
     Q_ASSERT_SUCCEEDED(hr);
@@ -650,6 +668,7 @@ void QLowEnergyControllerPrivate::discoverServiceDetails(const QBluetoothUuid &s
 
 void QLowEnergyControllerPrivate::startAdvertising(const QLowEnergyAdvertisingParameters &, const QLowEnergyAdvertisingData &, const QLowEnergyAdvertisingData &)
 {
+    setError(QLowEnergyController::AdvertisingError);
     Q_UNIMPLEMENTED();
 }
 
@@ -668,6 +687,12 @@ void QLowEnergyControllerPrivate::readCharacteristic(const QSharedPointer<QLowEn
 {
     qCDebug(QT_BT_WINRT) << __FUNCTION__ << service << charHandle;
     Q_ASSERT(!service.isNull());
+    if (role == QLowEnergyController::PeripheralRole) {
+        service->setError(QLowEnergyService::CharacteristicReadError);
+        Q_UNIMPLEMENTED();
+        return;
+    }
+
     if (!service->characteristicList.contains(charHandle)) {
         qCDebug(QT_BT_WINRT) << charHandle << "could not be found in service" << service->uuid;
         service->setError(QLowEnergyService::CharacteristicReadError);
@@ -727,6 +752,12 @@ void QLowEnergyControllerPrivate::readDescriptor(const QSharedPointer<QLowEnergy
 {
     qCDebug(QT_BT_WINRT) << __FUNCTION__ << service << charHandle << descHandle;
     Q_ASSERT(!service.isNull());
+    if (role == QLowEnergyController::PeripheralRole) {
+        service->setError(QLowEnergyService::DescriptorReadError);
+        Q_UNIMPLEMENTED();
+        return;
+    }
+
     if (!service->characteristicList.contains(charHandle)) {
         qCDebug(QT_BT_WINRT) << "Descriptor" << descHandle << "in characteristic" << charHandle
                              << "cannot be found in service" << service->uuid;
@@ -853,6 +884,11 @@ void QLowEnergyControllerPrivate::writeCharacteristic(const QSharedPointer<QLowE
 {
     qCDebug(QT_BT_WINRT) << __FUNCTION__ << service << charHandle << newValue << mode;
     Q_ASSERT(!service.isNull());
+    if (role == QLowEnergyController::PeripheralRole) {
+        service->setError(QLowEnergyService::CharacteristicWriteError);
+        Q_UNIMPLEMENTED();
+        return;
+    }
     if (!service->characteristicList.contains(charHandle)) {
         qCDebug(QT_BT_WINRT) << "Characteristic" << charHandle << "cannot be found in service" << service->uuid;
         service->setError(QLowEnergyService::CharacteristicWriteError);
@@ -937,6 +973,12 @@ void QLowEnergyControllerPrivate::writeDescriptor(
 {
     qCDebug(QT_BT_WINRT) << __FUNCTION__ << service << charHandle << descHandle << newValue;
     Q_ASSERT(!service.isNull());
+    if (role == QLowEnergyController::PeripheralRole) {
+        service->setError(QLowEnergyService::DescriptorWriteError);
+        Q_UNIMPLEMENTED();
+        return;
+    }
+
     if (!service->characteristicList.contains(charHandle)) {
         qCDebug(QT_BT_WINRT) << "Descriptor" << descHandle << "in characteristic" << charHandle
                              << "could not be found in service" << service->uuid;

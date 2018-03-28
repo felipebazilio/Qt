@@ -38,7 +38,10 @@ SOURCES += \
 VERSIONTAGGING_SOURCES = global/qversiontagging.cpp
 
 darwin: SOURCES += global/qoperatingsystemversion_darwin.mm
-win32: SOURCES += global/qoperatingsystemversion_win.cpp
+win32 {
+    SOURCES += global/qoperatingsystemversion_win.cpp
+    HEADERS += global/qoperatingsystemversion_win_p.h
+}
 
 # qlibraryinfo.cpp includes qconfig.cpp
 INCLUDEPATH += $$QT_BUILD_TREE/src/corelib/global
@@ -79,16 +82,13 @@ gcc:ltcg {
     SOURCES += $$VERSIONTAGGING_SOURCES
 }
 
-# On AARCH64 the fp16 extension is mandatory, so we don't need the conversion tables.
-!contains(QT_ARCH, "arm64") {
-    QMAKE_QFLOAT16_TABLES_GENERATE = global/qfloat16.h
+QMAKE_QFLOAT16_TABLES_GENERATE = global/qfloat16.h
 
-    qtPrepareTool(QMAKE_QFLOAT16_TABLES, qfloat16-tables)
+qtPrepareTool(QMAKE_QFLOAT16_TABLES, qfloat16-tables)
 
-    qfloat16_tables.commands = $$QMAKE_QFLOAT16_TABLES ${QMAKE_FILE_OUT}
-    qfloat16_tables.output = global/qfloat16tables.cpp
-    qfloat16_tables.depends = $$QMAKE_QFLOAT16_TABLES
-    qfloat16_tables.input = QMAKE_QFLOAT16_TABLES_GENERATE
-    qfloat16_tables.variable_out = SOURCES
-    QMAKE_EXTRA_COMPILERS += qfloat16_tables
-}
+qfloat16_tables.commands = $$QMAKE_QFLOAT16_TABLES ${QMAKE_FILE_OUT}
+qfloat16_tables.output = global/qfloat16tables.cpp
+qfloat16_tables.depends = $$QMAKE_QFLOAT16_TABLES
+qfloat16_tables.input = QMAKE_QFLOAT16_TABLES_GENERATE
+qfloat16_tables.variable_out = SOURCES
+QMAKE_EXTRA_COMPILERS += qfloat16_tables

@@ -1638,7 +1638,7 @@ void QRasterPaintEngine::stroke(const QVectorPath &path, const QPen &pen)
                     QPointF p = lines[i].p1();
                     QLineF line = s->matrix.map(QLineF(QPointF(p.x() - width*0.5, p.y()),
                                                        QPointF(p.x() + width*0.5, p.y())));
-                    d->rasterizer->rasterizeLine(line.p1(), line.p2(), 1);
+                    d->rasterizer->rasterizeLine(line.p1(), line.p2(), width / line.length());
                 }
                 continue;
             }
@@ -2339,8 +2339,8 @@ void QRasterPaintEngine::drawImage(const QRectF &r, const QImage &img, const QRe
     if (s->matrix.type() > QTransform::TxTranslate || stretch_sr) {
 
         QRectF targetBounds = s->matrix.mapRect(r);
-        bool exceedsPrecision = targetBounds.width() > 0xffff
-                                || targetBounds.height() > 0xffff;
+        bool exceedsPrecision = targetBounds.width() > 0x7fff
+                             || targetBounds.height() > 0x7fff;
 
         if (!exceedsPrecision && d->canUseFastImageBlending(d->rasterBuffer->compositionMode, img)) {
             if (s->matrix.type() > QTransform::TxScale) {
@@ -3207,7 +3207,7 @@ void QRasterPaintEnginePrivate::rasterizeLine_dashed(QLineF line,
         QLineF l = line;
 
         if (dash >= length) {
-            dash = length;
+            dash = line.length();  // Avoid accumulated precision error in 'length'
             *dashOffset += dash / width;
             length = 0;
         } else {

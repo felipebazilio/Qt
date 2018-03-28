@@ -50,30 +50,28 @@
 
 #include "chatserver.h"
 
-#include <QtCore/QDebug>
-#include <QTimer>
+#include <QDebug>
 #include <QTime>
-
-QT_BEGIN_NAMESPACE
+#include <QTimer>
 
 ChatServer::ChatServer(QObject *parent)
     : QObject(parent)
 {
-    QTimer* t = new QTimer(this);
-    connect(t, SIGNAL(timeout()), this, SLOT(sendKeepAlive()));
+    QTimer *t = new QTimer(this);
+    connect(t, &QTimer::timeout, this, &ChatServer::sendKeepAlive);
     t->start(10000);
 
     m_keepAliveCheckTimer = new QTimer(this);
     m_keepAliveCheckTimer->setSingleShot(true);
     m_keepAliveCheckTimer->setInterval(2000);
-    connect(m_keepAliveCheckTimer, SIGNAL(timeout()), this, SLOT(checkKeepAliveResponses()));
+    connect(m_keepAliveCheckTimer, &QTimer::timeout, this, &ChatServer::checkKeepAliveResponses);
 }
 
 ChatServer::~ChatServer()
 {}
 
 
-bool ChatServer::login(const QString& userName)
+bool ChatServer::login(const QString &userName)
 {
     //stop keepAliveCheck, when a new user logged in
     if (m_keepAliveCheckTimer->isActive()) {
@@ -93,7 +91,7 @@ bool ChatServer::login(const QString& userName)
     return true;
 }
 
-bool ChatServer::logout(const QString& userName)
+bool ChatServer::logout(const QString &userName)
 {
     if (!m_userList.contains(userName)) {
         return false;
@@ -105,7 +103,7 @@ bool ChatServer::logout(const QString& userName)
     }
 }
 
-bool ChatServer::sendMessage(const QString& user, const QString& msg)
+bool ChatServer::sendMessage(const QString &user, const QString &msg)
 {
     if (m_userList.contains(user)) {
         emit newMessage(QTime::currentTime().toString("HH:mm:ss"), user, msg);
@@ -130,7 +128,7 @@ void ChatServer::checkKeepAliveResponses()
     emit userListChanged();
 }
 
-void ChatServer::keepAliveResponse(const QString& user)
+void ChatServer::keepAliveResponse(const QString &user)
 {
     m_stillAliveUsers.append(user);
 }
@@ -140,5 +138,3 @@ QStringList ChatServer::userList() const
 {
     return m_userList;
 }
-
-QT_END_NAMESPACE

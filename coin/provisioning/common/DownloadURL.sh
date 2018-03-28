@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 #############################################################################
 ##
@@ -70,7 +70,8 @@ function DownloadURL {
             esac
         }
         echo "Checking SHA1 on PKG '$targetFile'"
-        echo "$expectedSha1 *$targetFile" | shasum --check || throw $ExceptionSHA1
+        echo "$expectedSha1 *$targetFile" > $targetFile.sha1
+        shasum --check $targetFile.sha1 || throw $ExceptionSHA1
     )
 
     catch || {

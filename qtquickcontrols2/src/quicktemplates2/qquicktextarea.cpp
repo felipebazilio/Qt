@@ -39,6 +39,7 @@
 #include "qquickcontrol_p.h"
 #include "qquickcontrol_p_p.h"
 #include "qquickscrollview_p.h"
+#include "qquickdeferredexecute_p_p.h"
 
 #include <QtQml/qqmlinfo.h>
 #include <QtQuick/private/qquickitem_p.h>
@@ -256,7 +257,7 @@ void QQuickTextAreaPrivate::detachFlickable()
     QObject::disconnect(flickable, &QQuickFlickable::contentXChanged, q, &QQuickItem::update);
     QObject::disconnect(flickable, &QQuickFlickable::contentYChanged, q, &QQuickItem::update);
 
-    QQuickItemPrivate::get(flickable)->updateOrRemoveGeometryChangeListener(this, QQuickGeometryChange::Size);
+    QQuickItemPrivate::get(flickable)->updateOrRemoveGeometryChangeListener(this, QQuickGeometryChange::Nothing);
     QObjectPrivate::disconnect(flickable, &QQuickFlickable::contentWidthChanged, this, &QQuickTextAreaPrivate::resizeFlickableControl);
     QObjectPrivate::disconnect(flickable, &QQuickFlickable::contentHeightChanged, this, &QQuickTextAreaPrivate::resizeFlickableControl);
 
@@ -391,6 +392,26 @@ QAccessible::Role QQuickTextAreaPrivate::accessibleRole() const
 }
 #endif
 
+static inline QString backgroundName() { return QStringLiteral("background"); }
+
+void QQuickTextAreaPrivate::cancelBackground()
+{
+    Q_Q(QQuickTextArea);
+    quickCancelDeferred(q, backgroundName());
+}
+
+void QQuickTextAreaPrivate::executeBackground(bool complete)
+{
+    Q_Q(QQuickTextArea);
+    if (background.wasExecuted())
+        return;
+
+    if (!background || complete)
+        quickBeginDeferred(q, backgroundName(), background);
+    if (complete)
+        quickCompleteDeferred(q, backgroundName(), background);
+}
+
 QQuickTextArea::QQuickTextArea(QQuickItem *parent)
     : QQuickTextEdit(*(new QQuickTextAreaPrivate), parent)
 {
@@ -404,6 +425,13 @@ QQuickTextArea::QQuickTextArea(QQuickItem *parent)
 #endif
     QObjectPrivate::connect(this, &QQuickTextEdit::readOnlyChanged,
                             d, &QQuickTextAreaPrivate::readOnlyChanged);
+}
+
+QQuickTextArea::~QQuickTextArea()
+{
+    Q_D(QQuickTextArea);
+    if (d->flickable)
+        d->detachFlickable();
 }
 
 QQuickTextAreaAttached *QQuickTextArea::qmlAttachedProperties(QObject *object)
@@ -437,7 +465,9 @@ void QQuickTextArea::setFont(const QFont &font)
 */
 QQuickItem *QQuickTextArea::background() const
 {
-    Q_D(const QQuickTextArea);
+    QQuickTextAreaPrivate *d = const_cast<QQuickTextAreaPrivate *>(d_func());
+    if (!d->background)
+        d->executeBackground();
     return d->background;
 }
 
@@ -447,7 +477,10 @@ void QQuickTextArea::setBackground(QQuickItem *background)
     if (d->background == background)
         return;
 
-    QQuickControlPrivate::destroyDelegate(d->background, this);
+    if (!d->background.isExecuting())
+        d->cancelBackground();
+
+    delete d->background;
     d->background = background;
     if (background) {
         background->setParentItem(this);
@@ -456,7 +489,8 @@ void QQuickTextArea::setBackground(QQuickItem *background)
         if (isComponentComplete())
             d->resizeBackground();
     }
-    emit backgroundChanged();
+    if (!d->background.isExecuting())
+        emit backgroundChanged();
 }
 
 /*!
@@ -504,6 +538,14 @@ void QQuickTextArea::setFocusReason(Qt::FocusReason reason)
 
     d->focusReason = reason;
     emit focusReasonChanged();
+}
+
+bool QQuickTextArea::contains(const QPointF &point) const
+{
+    Q_D(const QQuickTextArea);
+    if (d->flickable && !d->flickable->contains(d->flickable->mapFromItem(this, point)))
+        return false;
+    return QQuickTextEdit::contains(point);
 }
 
 /*!
@@ -582,14 +624,6 @@ void QQuickTextArea::resetHoverEnabled()
 #endif
 }
 
-bool QQuickTextArea::contains(const QPointF &point) const
-{
-    Q_D(const QQuickTextArea);
-    if (d->flickable && !d->flickable->contains(d->flickable->mapFromItem(this, point)))
-        return false;
-    return QQuickTextEdit::contains(point);
-}
-
 void QQuickTextArea::classBegin()
 {
     Q_D(QQuickTextArea);
@@ -600,6 +634,7 @@ void QQuickTextArea::classBegin()
 void QQuickTextArea::componentComplete()
 {
     Q_D(QQuickTextArea);
+    d->executeBackground(true);
     QQuickTextEdit::componentComplete();
 #if QT_CONFIG(quicktemplates2_hover)
     if (!d->explicitHoverEnabled)
@@ -615,17 +650,19 @@ void QQuickTextArea::itemChange(QQuickItem::ItemChange change, const QQuickItem:
 {
     Q_D(QQuickTextArea);
     QQuickTextEdit::itemChange(change, value);
-    if (change == ItemParentHasChanged && value.item) {
+    if ((change == ItemParentHasChanged && value.item) || (change == ItemSceneChange && value.window)) {
         d->resolveFont();
 #if QT_CONFIG(quicktemplates2_hover)
         if (!d->explicitHoverEnabled)
             d->updateHoverEnabled(QQuickControlPrivate::calcHoverEnabled(d->parentItem), false); // explicit=false
 #endif
-        QQuickFlickable *flickable = qobject_cast<QQuickFlickable *>(value.item->parentItem());
-        if (flickable) {
-            QQuickScrollView *scrollView = qobject_cast<QQuickScrollView *>(flickable->parentItem());
-            if (scrollView)
-                d->attachFlickable(flickable);
+        if (change == ItemParentHasChanged) {
+            QQuickFlickable *flickable = qobject_cast<QQuickFlickable *>(value.item->parentItem());
+            if (flickable) {
+                QQuickScrollView *scrollView = qobject_cast<QQuickScrollView *>(flickable->parentItem());
+                if (scrollView)
+                    d->attachFlickable(flickable);
+            }
         }
     }
 }

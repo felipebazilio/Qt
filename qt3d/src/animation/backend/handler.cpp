@@ -75,24 +75,28 @@ void Handler::setDirty(DirtyFlag flag, Qt3DCore::QNodeId nodeId)
 {
     switch (flag) {
     case AnimationClipDirty: {
+        QMutexLocker lock(&m_mutex);
         const auto handle = m_animationClipLoaderManager->lookupHandle(nodeId);
         m_dirtyAnimationClips.push_back(handle);
         break;
     }
 
     case ChannelMappingsDirty: {
+        QMutexLocker lock(&m_mutex);
         const auto handle = m_channelMapperManager->lookupHandle(nodeId);
         m_dirtyChannelMappers.push_back(handle);
         break;
     }
 
     case ClipAnimatorDirty: {
+        QMutexLocker lock(&m_mutex);
         const auto handle = m_clipAnimatorManager->lookupHandle(nodeId);
         m_dirtyClipAnimators.push_back(handle);
         break;
     }
 
     case BlendedClipAnimatorDirty: {
+        QMutexLocker lock(&m_mutex);
         const HBlendedClipAnimator handle = m_blendedClipAnimatorManager->lookupHandle(nodeId);
         m_dirtyBlendedAnimators.push_back(handle);
         break;
@@ -140,6 +144,39 @@ void Handler::setBlendedClipAnimatorRunning(const HBlendedClipAnimator &handle, 
     }
 }
 
+// The vectors may get outdated when the application removes/deletes an
+// animator component in the meantime. Recognize this. This should be
+// relatively infrequent so in most cases the vectors will not change at all.
+void Handler::cleanupHandleList(QVector<HAnimationClip> *clips)
+{
+    for (auto it = clips->begin(); it != clips->end(); ) {
+        if (!m_animationClipLoaderManager->data(*it))
+            clips->erase(it);
+        else
+            ++it;
+    }
+}
+
+void Handler::cleanupHandleList(QVector<HClipAnimator> *animators)
+{
+    for (auto it = animators->begin(); it != animators->end(); ) {
+        if (!m_clipAnimatorManager->data(*it))
+            animators->erase(it);
+        else
+            ++it;
+    }
+}
+
+void Handler::cleanupHandleList(QVector<HBlendedClipAnimator> *animators)
+{
+    for (auto it = animators->begin(); it != animators->end(); ) {
+        if (!m_blendedClipAnimatorManager->data(*it))
+            animators->erase(it);
+        else
+            ++it;
+    }
+}
+
 QVector<Qt3DCore::QAspectJobPtr> Handler::jobsToExecute(qint64 time)
 {
     // Store the simulation time so we can mark the start time of
@@ -149,10 +186,13 @@ QVector<Qt3DCore::QAspectJobPtr> Handler::jobsToExecute(qint64 time)
 
     QVector<Qt3DCore::QAspectJobPtr> jobs;
 
+    QMutexLocker lock(&m_mutex);
+
     // If there are any dirty animation clips that need loading,
     // queue up a job for them
     if (!m_dirtyAnimationClips.isEmpty()) {
         qCDebug(HandlerLogic) << "Added LoadAnimationClipJob";
+        cleanupHandleList(&m_dirtyAnimationClips);
         m_loadAnimationClipJob->addDirtyAnimationClips(m_dirtyAnimationClips);
         jobs.push_back(m_loadAnimationClipJob);
         m_dirtyAnimationClips.clear();
@@ -164,6 +204,7 @@ QVector<Qt3DCore::QAspectJobPtr> Handler::jobsToExecute(qint64 time)
     if (!m_dirtyClipAnimators.isEmpty()) {
         qCDebug(HandlerLogic) << "Added FindRunningClipAnimatorsJob";
         m_findRunningClipAnimatorsJob->removeDependency(QWeakPointer<Qt3DCore::QAspectJob>());
+        cleanupHandleList(&m_dirtyClipAnimators);
         m_findRunningClipAnimatorsJob->setDirtyClipAnimators(m_dirtyClipAnimators);
         jobs.push_back(m_findRunningClipAnimatorsJob);
         if (jobs.contains(m_loadAnimationClipJob))
@@ -182,6 +223,7 @@ QVector<Qt3DCore::QAspectJobPtr> Handler::jobsToExecute(qint64 time)
 
     // If there are any running ClipAnimators, evaluate them for the current
     // time and send property changes
+    cleanupHandleList(&m_runningClipAnimators);
     if (!m_runningClipAnimators.isEmpty()) {
         qCDebug(HandlerLogic) << "Added EvaluateClipAnimatorJobs";
 
@@ -191,7 +233,7 @@ QVector<Qt3DCore::QAspectJobPtr> Handler::jobsToExecute(qint64 time)
         if (oldSize < newSize) {
             m_evaluateClipAnimatorJobs.resize(newSize);
             for (int i = oldSize; i < newSize; ++i) {
-                m_evaluateClipAnimatorJobs[i].reset(new EvaluateClipAnimatorJob());
+                m_evaluateClipAnimatorJobs[i] = QSharedPointer<EvaluateClipAnimatorJob>::create();
                 m_evaluateClipAnimatorJobs[i]->setHandler(this);
             }
         }
@@ -209,6 +251,7 @@ QVector<Qt3DCore::QAspectJobPtr> Handler::jobsToExecute(qint64 time)
     }
 
     // BlendClipAnimator execution
+    cleanupHandleList(&m_runningBlendedClipAnimators);
     if (!m_runningBlendedClipAnimators.isEmpty()) {
         // Ensure we have a job per clip animator
         const int oldSize = m_evaluateBlendClipAnimatorJobs.size();
@@ -216,7 +259,7 @@ QVector<Qt3DCore::QAspectJobPtr> Handler::jobsToExecute(qint64 time)
         if (oldSize < newSize) {
             m_evaluateBlendClipAnimatorJobs.resize(newSize);
             for (int i = oldSize; i < newSize; ++i) {
-                m_evaluateBlendClipAnimatorJobs[i].reset(new EvaluateBlendClipAnimatorJob());
+                m_evaluateBlendClipAnimatorJobs[i] = QSharedPointer<EvaluateBlendClipAnimatorJob>::create();
                 m_evaluateBlendClipAnimatorJobs[i]->setHandler(this);
             }
         }

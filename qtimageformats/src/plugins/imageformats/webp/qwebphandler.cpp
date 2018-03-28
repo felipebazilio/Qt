@@ -48,7 +48,6 @@
 static const int riffHeaderSize = 12; // RIFF_HEADER_SIZE from webp/format_constants.h
 
 QWebpHandler::QWebpHandler() :
-    m_lossless(false),
     m_quality(75),
     m_scanState(ScanNotScanned),
     m_features(),
@@ -74,6 +73,10 @@ bool QWebpHandler::canRead() const
 
     if (m_scanState != ScanError) {
         setFormat(QByteArrayLiteral("webp"));
+
+        if (m_features.has_animation && m_iter.frame_num >= m_frameCount)
+            return false;
+
         return true;
     }
     return false;
@@ -118,6 +121,8 @@ bool QWebpHandler::ensureScanned() const
                 that->m_bgColor = QColor::fromRgba(QRgb(WebPDemuxGetI(m_demuxer, WEBP_FF_BACKGROUND_COLOR)));
 
                 that->m_composited = new QImage(that->m_features.width, that->m_features.height, QImage::Format_ARGB32);
+                if (that->m_features.has_alpha)
+                    that->m_composited->fill(Qt::transparent);
 
                 // We do not reset device position since we have read in all data
                 m_scanState = ScanSuccess;
@@ -189,6 +194,8 @@ bool QWebpHandler::read(QImage *image)
     } else {
         // Animation
         QPainter painter(m_composited);
+        if (m_features.has_alpha && m_iter.dispose_method == WEBP_MUX_DISPOSE_BACKGROUND)
+            m_composited->fill(Qt::transparent);
         painter.drawImage(currentImageRect(), frame);
 
         *image = *m_composited;
@@ -242,8 +249,8 @@ bool QWebpHandler::write(const QImage &image)
         return false;
     }
 
-    config.lossless = m_lossless;
-    config.quality = m_quality;
+    config.quality = m_quality < 0 ? 75 : qMin(m_quality, 100);
+    config.lossless = (config.quality >= 100);
     picture.writer = pictureWriter;
     picture.custom_ptr = device();
 
@@ -281,13 +288,12 @@ void QWebpHandler::setOption(ImageOption option, const QVariant &value)
 {
     switch (option) {
     case Quality:
-        m_quality = qBound(0, value.toInt(), 100);
-        m_lossless = (m_quality >= 100);
+        m_quality = value.toInt();
         return;
     default:
         break;
     }
-    return QImageIOHandler::setOption(option, value);
+    QImageIOHandler::setOption(option, value);
 }
 
 bool QWebpHandler::supportsOption(ImageOption option) const

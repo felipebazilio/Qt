@@ -1,12 +1,22 @@
 /****************************************************************************
 **
 ** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -45,8 +55,9 @@
 #include <QTabBar>
 #include <QWebEngineProfile>
 
-TabWidget::TabWidget(QWidget *parent)
+TabWidget::TabWidget(QWebEngineProfile *profile, QWidget *parent)
     : QTabWidget(parent)
+    , m_profile(profile)
 {
     QTabBar *tabBar = this->tabBar();
     tabBar->setTabsClosable(true);
@@ -56,19 +67,14 @@ TabWidget::TabWidget(QWidget *parent)
     connect(tabBar, &QTabBar::customContextMenuRequested, this, &TabWidget::handleContextMenuRequested);
     connect(tabBar, &QTabBar::tabCloseRequested, this, &TabWidget::closeTab);
     connect(tabBar, &QTabBar::tabBarDoubleClicked, [this](int index) {
-        if (index != -1)
-            return;
-        createTab();
+        if (index == -1)
+            createTab();
     });
 
     setDocumentMode(true);
     setElideMode(Qt::ElideRight);
 
     connect(this, &QTabWidget::currentChanged, this, &TabWidget::handleCurrentChanged);
-}
-
-TabWidget::~TabWidget()
-{
 }
 
 void TabWidget::handleCurrentChanged(int index)
@@ -80,11 +86,7 @@ void TabWidget::handleCurrentChanged(int index)
         emit titleChanged(view->title());
         emit loadProgress(view->loadProgress());
         emit urlChanged(view->url());
-        QIcon pageIcon = view->page()->icon();
-        if (!pageIcon.isNull())
-            emit iconChanged(pageIcon);
-        else
-            emit iconChanged(QIcon(QStringLiteral(":defaulticon.png")));
+        emit favIconChanged(view->favIcon());
         emit webActionEnabledChanged(QWebEnginePage::Back, view->isWebActionEnabled(QWebEnginePage::Back));
         emit webActionEnabledChanged(QWebEnginePage::Forward, view->isWebActionEnabled(QWebEnginePage::Forward));
         emit webActionEnabledChanged(QWebEnginePage::Stop, view->isWebActionEnabled(QWebEnginePage::Stop));
@@ -93,7 +95,7 @@ void TabWidget::handleCurrentChanged(int index)
         emit titleChanged(QString());
         emit loadProgress(0);
         emit urlChanged(QUrl());
-        emit iconChanged(QIcon(QStringLiteral(":defaulticon.png")));
+        emit favIconChanged(QIcon());
         emit webActionEnabledChanged(QWebEnginePage::Back, false);
         emit webActionEnabledChanged(QWebEnginePage::Forward, false);
         emit webActionEnabledChanged(QWebEnginePage::Stop, false);
@@ -150,8 +152,10 @@ void TabWidget::setupView(WebView *webView)
 
     connect(webView, &QWebEngineView::titleChanged, [this, webView](const QString &title) {
         int index = indexOf(webView);
-        if (index != -1)
+        if (index != -1) {
             setTabText(index, title);
+            setTabToolTip(index, title);
+        }
         if (currentIndex() == index)
             emit titleChanged(title);
     });
@@ -170,25 +174,16 @@ void TabWidget::setupView(WebView *webView)
         if (currentIndex() == indexOf(webView))
             emit linkHovered(url);
     });
-    connect(webPage, &WebPage::iconChanged, [this, webView](const QIcon &icon) {
+    connect(webView, &WebView::favIconChanged, [this, webView](const QIcon &icon) {
         int index = indexOf(webView);
-        QIcon ico = icon.isNull() ? QIcon(QStringLiteral(":defaulticon.png")) : icon;
-
         if (index != -1)
-            setTabIcon(index, ico);
+            setTabIcon(index, icon);
         if (currentIndex() == index)
-            emit iconChanged(ico);
+            emit favIconChanged(icon);
     });
     connect(webView, &WebView::webActionEnabledChanged, [this, webView](QWebEnginePage::WebAction action, bool enabled) {
         if (currentIndex() ==  indexOf(webView))
             emit webActionEnabledChanged(action,enabled);
-    });
-    connect(webView, &QWebEngineView::loadStarted, [this, webView]() {
-        int index = indexOf(webView);
-        if (index != -1) {
-            QIcon icon(QLatin1String(":view-refresh.png"));
-            setTabIcon(index, icon);
-        }
     });
     connect(webPage, &QWebEnginePage::windowCloseRequested, [this, webView]() {
         int index = indexOf(webView);
@@ -197,15 +192,21 @@ void TabWidget::setupView(WebView *webView)
     });
 }
 
-WebView *TabWidget::createTab(bool makeCurrent)
+WebView *TabWidget::createTab()
+{
+    WebView *webView = createBackgroundTab();
+    setCurrentWidget(webView);
+    return webView;
+}
+
+WebView *TabWidget::createBackgroundTab()
 {
     WebView *webView = new WebView;
-    WebPage *webPage = new WebPage(QWebEngineProfile::defaultProfile(), webView);
+    WebPage *webPage = new WebPage(m_profile, webView);
     webView->setPage(webPage);
     setupView(webView);
-    addTab(webView, tr("(Untitled)"));
-    if (makeCurrent)
-        setCurrentWidget(webView);
+    int index = addTab(webView, tr("(Untitled)"));
+    setTabIcon(index, webView->favIcon());
     return webView;
 }
 
@@ -239,7 +240,7 @@ void TabWidget::closeTab(int index)
 void TabWidget::cloneTab(int index)
 {
     if (WebView *view = webView(index)) {
-        WebView *tab = createTab(false);
+        WebView *tab = createTab();
         tab->setUrl(view->url());
     }
 }

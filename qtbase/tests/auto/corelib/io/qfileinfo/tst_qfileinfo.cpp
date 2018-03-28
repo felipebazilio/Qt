@@ -64,6 +64,14 @@
 #define Q_NO_SYMLINKS
 #endif
 
+#if defined(Q_OS_WIN)
+QT_BEGIN_NAMESPACE
+extern Q_CORE_EXPORT int qt_ntfs_permission_lookup;
+QT_END_NAMESPACE
+#  ifndef Q_OS_WINRT
+bool IsUserAdmin();
+#  endif
+#endif
 
 #if defined(Q_OS_UNIX) && !defined(Q_OS_VXWORKS)
 inline bool qt_isEvilFsTypeName(const char *name)
@@ -1261,6 +1269,7 @@ void tst_QFileInfo::isSymLink_data()
     QFile::remove("link.lnk");
     QFile::remove("brokenlink.lnk");
     QFile::remove("dummyfile");
+    QFile::remove("relative/link.lnk");
 
     QFile file1(m_sourceFile);
     QVERIFY(file1.link("link.lnk"));
@@ -1277,6 +1286,12 @@ void tst_QFileInfo::isSymLink_data()
     QTest::newRow("existent file") << m_sourceFile << false << "";
     QTest::newRow("link") << "link.lnk" << true << QFileInfo(m_sourceFile).absoluteFilePath();
     QTest::newRow("broken link") << "brokenlink.lnk" << true << QFileInfo("dummyfile").absoluteFilePath();
+
+#ifndef Q_OS_WIN
+    QDir::current().mkdir("relative");
+    QFile::link("../dummyfile", "relative/link.lnk");
+    QTest::newRow("relative link") << "relative/link.lnk" << true << QFileInfo("dummyfile").absoluteFilePath();
+#endif
 #endif
 }
 
@@ -1502,21 +1517,27 @@ void tst_QFileInfo::ntfsJunctionPointsAndSymlinks_data()
         QVERIFY2(file.exists(), msgDoesNotExist(file.fileName()).constData());
 
         QTest::newRow("absolute dir symlink") << absSymlink << true << QDir::fromNativeSeparators(absTarget) << target.canonicalPath();
-        QTest::newRow("relative dir symlink") << relSymlink << true << QDir::fromNativeSeparators(relTarget) << target.canonicalPath();
+        QTest::newRow("relative dir symlink") << relSymlink << true << QDir::fromNativeSeparators(absTarget) << target.canonicalPath();
         QTest::newRow("file in symlink dir") << fileInSymlink << false << "" << target.canonicalPath().append("/file");
     }
     {
         //File symlinks
+        pwd.mkdir("relative");
+        QDir relativeDir("relative");
         QFileInfo target(m_sourceFile);
         QString absTarget = QDir::toNativeSeparators(target.absoluteFilePath());
         QString absSymlink = QDir::toNativeSeparators(pwd.absolutePath()).append("\\abs_symlink.cpp");
         QString relTarget = QDir::toNativeSeparators(pwd.relativeFilePath(target.absoluteFilePath()));
         QString relSymlink = "rel_symlink.cpp";
+        QString relToRelTarget = QDir::toNativeSeparators(relativeDir.relativeFilePath(target.absoluteFilePath()));
+        QString relToRelSymlink = "relative/rel_symlink";
         QVERIFY(pwd.exists("abs_symlink.cpp") || createSymbolicLinkW((wchar_t*)absSymlink.utf16(),(wchar_t*)absTarget.utf16(),0x0));
         QVERIFY(pwd.exists(relSymlink) || createSymbolicLinkW((wchar_t*)relSymlink.utf16(),(wchar_t*)relTarget.utf16(),0x0));
-
+        QVERIFY(pwd.exists(relToRelSymlink)
+                || createSymbolicLinkW((wchar_t*)relToRelSymlink.utf16(), (wchar_t*)relToRelTarget.utf16(),0x0));
         QTest::newRow("absolute file symlink") << absSymlink << true << QDir::fromNativeSeparators(absTarget) << target.canonicalFilePath();
-        QTest::newRow("relative file symlink") << relSymlink << true << QDir::fromNativeSeparators(relTarget) << target.canonicalFilePath();
+        QTest::newRow("relative file symlink") << relSymlink << true << QDir::fromNativeSeparators(absTarget) << target.canonicalFilePath();
+        QTest::newRow("relative to relative file symlink") << relToRelSymlink << true << QDir::fromNativeSeparators(absTarget) << target.canonicalFilePath();
     }
 
     //Junctions
@@ -1621,6 +1642,15 @@ void tst_QFileInfo::isWritable()
     QVERIFY2(fi.exists(), msgDoesNotExist(fi.absoluteFilePath()).constData());
     QVERIFY(!fi.isWritable());
 #endif
+
+#if defined (Q_OS_WIN) && !defined(Q_OS_WINRT)
+    QScopedValueRollback<int> ntfsMode(qt_ntfs_permission_lookup);
+    qt_ntfs_permission_lookup = 1;
+    QFileInfo fi2(QFile::decodeName(qgetenv("SystemRoot") + "/system.ini"));
+    QVERIFY(fi2.exists());
+    QCOMPARE(fi2.isWritable(), IsUserAdmin());
+#endif
+
 #if defined (Q_OS_QNX) // On QNX /etc is usually on a read-only filesystem
     QVERIFY(!QFileInfo("/etc/passwd").isWritable());
 #elif defined (Q_OS_UNIX) && !defined(Q_OS_VXWORKS) // VxWorks does not have users/groups
@@ -1794,7 +1824,7 @@ void tst_QFileInfo::detachingOperations()
 }
 
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
-BOOL IsUserAdmin()
+bool IsUserAdmin()
 {
     BOOL b;
     SID_IDENTIFIER_AUTHORITY NtAuthority = SECURITY_NT_AUTHORITY;
@@ -1812,12 +1842,8 @@ BOOL IsUserAdmin()
         FreeSid(AdministratorsGroup);
     }
 
-    return(b);
+    return b != FALSE;
 }
-
-QT_BEGIN_NAMESPACE
-extern Q_CORE_EXPORT int qt_ntfs_permission_lookup;
-QT_END_NAMESPACE
 
 #endif // Q_OS_WIN && !Q_OS_WINRT
 

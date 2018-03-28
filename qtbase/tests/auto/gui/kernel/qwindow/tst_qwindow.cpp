@@ -105,6 +105,7 @@ private slots:
     void stateChange();
     void flags();
     void cleanup();
+    void testBlockingWindowShownAfterModalDialog();
 
 private:
     QPoint m_availableTopLeft;
@@ -393,13 +394,17 @@ void tst_QWindow::exposeEventOnShrink_QTBUG54040()
 
     QVERIFY(QTest::qWaitForWindowExposed(&window));
 
-    const int initialExposeCount = window.received(QEvent::Expose);
+    int exposeCount = window.received(QEvent::Expose);
     window.resize(window.width(), window.height() - 5);
-    QTRY_COMPARE(window.received(QEvent::Expose), initialExposeCount + 1);
+    QTRY_VERIFY(window.received(QEvent::Expose) > exposeCount);
+
+    exposeCount = window.received(QEvent::Expose);
     window.resize(window.width() - 5, window.height());
-    QTRY_COMPARE(window.received(QEvent::Expose), initialExposeCount + 2);
+    QTRY_VERIFY(window.received(QEvent::Expose) > exposeCount);
+
+    exposeCount = window.received(QEvent::Expose);
     window.resize(window.width() - 5, window.height() - 5);
-    QTRY_COMPARE(window.received(QEvent::Expose), initialExposeCount + 3);
+    QTRY_VERIFY(window.received(QEvent::Expose) > exposeCount);
 }
 
 void tst_QWindow::positioning_data()
@@ -1644,7 +1649,7 @@ void tst_QWindow::inputReentrancy()
     QCOMPARE(window.touchReleasedCount, 1);
 }
 
-#ifndef QT_NO_TABLETEVENT
+#if QT_CONFIG(tabletevent)
 class TabletTestWindow : public QWindow
 {
 public:
@@ -1672,7 +1677,7 @@ public:
 
 void tst_QWindow::tabletEvents()
 {
-#ifndef QT_NO_TABLETEVENT
+#if QT_CONFIG(tabletevent)
     TabletTestWindow window;
     window.setGeometry(QRect(m_availableTopLeft + QPoint(10, 10), m_testWindowSize));
     qGuiApp->installEventFilter(&window);
@@ -2239,6 +2244,47 @@ void tst_QWindow::flags()
     QCOMPARE(window.flags(), baseFlags | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     window.setFlag(Qt::FramelessWindowHint, false);
     QCOMPARE(window.flags(), baseFlags | Qt::WindowStaysOnTopHint);
+}
+
+class EventWindow : public QWindow
+{
+public:
+    EventWindow() : QWindow(), gotBlocked(false) {}
+    bool gotBlocked;
+protected:
+    bool event(QEvent *e)
+    {
+        if (e->type() == QEvent::WindowBlocked)
+            gotBlocked = true;
+        return QWindow::event(e);
+    }
+};
+
+void tst_QWindow::testBlockingWindowShownAfterModalDialog()
+{
+    EventWindow normalWindow;
+    normalWindow.setFramePosition(m_availableTopLeft + QPoint(80, 80));
+    normalWindow.resize(m_testWindowSize);
+    normalWindow.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&normalWindow));
+    QVERIFY(!normalWindow.gotBlocked);
+
+    QWindow dialog;
+    dialog.setFramePosition(m_availableTopLeft + QPoint(200, 200));
+    dialog.resize(m_testWindowSize);
+    dialog.setModality(Qt::ApplicationModal);
+    dialog.setFlags(Qt::Dialog);
+    dialog.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+    QVERIFY(normalWindow.gotBlocked);
+
+    EventWindow normalWindowAfter;
+    normalWindowAfter.setFramePosition(m_availableTopLeft + QPoint(80, 80));
+    normalWindowAfter.resize(m_testWindowSize);
+    QVERIFY(!normalWindowAfter.gotBlocked);
+    normalWindowAfter.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&normalWindowAfter));
+    QVERIFY(normalWindowAfter.gotBlocked);
 }
 
 #include <tst_qwindow.moc>

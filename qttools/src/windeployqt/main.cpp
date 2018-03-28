@@ -37,6 +37,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCommandLineOption>
+#include <QtCore/QOperatingSystemVersion>
 #include <QtCore/QSharedPointer>
 #include <QtCore/QVector>
 
@@ -816,7 +817,8 @@ static const PluginModuleMapping pluginModuleMappings[] =
     {"texttospeech", QtTextToSpeechModule},
     {"qtwebengine", QtWebEngineModule | QtWebEngineCoreModule | QtWebEngineWidgetsModule},
     {"sceneparsers", Qt3DRendererModule},
-    {"renderplugins", Qt3DRendererModule}
+    {"renderplugins", Qt3DRendererModule},
+    {"geometryloaders", Qt3DRendererModule}
 };
 
 static inline quint64 qtModuleForPlugin(const QString &subDirName)
@@ -914,9 +916,12 @@ QStringList findQtPlugins(quint64 *usedQtModules, quint64 disabledQtModules,
                     std::wcerr << "Warning: Cannot determine dependencies of "
                         << QDir::toNativeSeparators(pluginPath) << ": " << errorMessage << '\n';
                 }
-                if (neededModules & disabledQtModules) {
-                    if (optVerboseLevel)
-                        std::wcout << "Skipping plugin " << plugin << " due to disabled dependencies.\n";
+                if (const quint64 missingModules = neededModules & disabledQtModules) {
+                    if (optVerboseLevel) {
+                        std::wcout << "Skipping plugin " << plugin
+                            << " due to disabled dependencies ("
+                            << formatQtModules(missingModules).constData() << ").\n";
+                    }
                 } else {
                     if (const quint64 missingModules = (neededModules & ~*usedQtModules)) {
                         *usedQtModules |= missingModules;
@@ -947,7 +952,8 @@ static QStringList translationNameFilters(quint64 modules, const QString &prefix
 }
 
 static bool deployTranslations(const QString &sourcePath, quint64 usedQtModules,
-                               const QString &target, unsigned flags, QString *errorMessage)
+                               const QString &target, const Options &options,
+                               QString *errorMessage)
 {
     // Find available languages prefixes by checking on qtbase.
     QStringList prefixes;
@@ -973,14 +979,23 @@ static bool deployTranslations(const QString &sourcePath, quint64 usedQtModules,
         arguments.clear();
         const QString targetFile = QStringLiteral("qt_") + prefix + QStringLiteral(".qm");
         arguments.append(QStringLiteral("-o"));
-        arguments.append(QDir::toNativeSeparators(absoluteTarget + QLatin1Char('/') + targetFile));
+        const QString targetFilePath = absoluteTarget + QLatin1Char('/') + targetFile;
+        if (options.json)
+            options.json->addFile(sourcePath +  QLatin1Char('/') + targetFile, absoluteTarget);
+        arguments.append(QDir::toNativeSeparators(targetFilePath));
         const QFileInfoList &langQmFiles = sourceDir.entryInfoList(translationNameFilters(usedQtModules, prefix));
-        for (const QFileInfo &langQmFileFi : langQmFiles)
+        for (const QFileInfo &langQmFileFi : langQmFiles) {
+            // winrt relies on a proper list of deployed files. We cannot cheat an mention files we do not ship here.
+            if (options.json && !options.isWinRt()) {
+                options.json->addFile(langQmFileFi.absoluteFilePath(),
+                                      absoluteTarget);
+            }
             arguments.append(langQmFileFi.fileName());
+        }
         if (optVerboseLevel)
             std::wcout << "Creating " << targetFile << "...\n";
         unsigned long exitCode;
-        if (!(flags & SkipUpdateFile)
+        if ((options.updateFileFlags & SkipUpdateFile) == 0
             && (!runProcess(binary, arguments, sourcePath, &exitCode, 0, 0, errorMessage) || exitCode)) {
             return false;
         }
@@ -1043,10 +1058,16 @@ static QString vcRedistDir()
     // Look in reverse order for folder containing the debug redist folder
     const QFileInfoList subDirs =
         QDir(vc2017RedistDirName).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::Reversed);
+    const bool isWindows10 = QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows10;
     for (const QFileInfo &f : subDirs) {
-        const QString path = f.absoluteFilePath();
+        QString path = f.absoluteFilePath();
         if (QFileInfo(path + slash + vcDebugRedistDir()).isDir())
             return path;
+        if (isWindows10) {
+            path += QStringLiteral("/onecore");
+            if (QFileInfo(path + slash + vcDebugRedistDir()).isDir())
+                return path;
+        }
     }
     std::wcerr << "Warning: Cannot find Visual Studio redist directory under "
         << QDir::toNativeSeparators(vc2017RedistDirName).toStdWString() << ".\n";
@@ -1097,9 +1118,12 @@ static QStringList compilerRunTimeLibs(Platform platform, bool isDebug, unsigned
             const QStringList countryCodes = vcRedistDir.entryList(QStringList(QStringLiteral("[0-9]*")), QDir::Dirs);
             if (!countryCodes.isEmpty()) // Pre MSVC2017
                 releaseRedistDir += QLatin1Char('/') + countryCodes.constFirst();
-            const QFileInfo fi(releaseRedistDir + QLatin1Char('/')
-                               + QStringLiteral("vcredist_") + wordSizeString
-                               + QStringLiteral(".exe"));
+            QFileInfo fi(releaseRedistDir + QLatin1Char('/') + QStringLiteral("vc_redist.")
+                         + wordSizeString + QStringLiteral(".exe"));
+            if (!fi.isFile()) { // Pre MSVC2017/15.5
+                fi.setFile(releaseRedistDir + QLatin1Char('/') + QStringLiteral("vcredist_")
+                           + wordSizeString + QStringLiteral(".exe"));
+            }
             if (fi.isFile())
                 redistFiles.append(fi.absoluteFilePath());
         }
@@ -1513,7 +1537,7 @@ static DeployResult deploy(const Options &options,
             return result;
         if (!deployTranslations(qmakeVariables.value(QStringLiteral("QT_INSTALL_TRANSLATIONS")),
                                 result.deployedQtLibraries, options.translationsDirectory,
-                                options.updateFileFlags, errorMessage)) {
+                                options, errorMessage)) {
             return result;
         }
     }
@@ -1543,6 +1567,7 @@ static bool deployWebEngineCore(const QMap<QString, QString> &qmakeVariables,
                                 const Options &options, bool isDebug, QString *errorMessage)
 {
     static const char *installDataFiles[] = {"icudtl.dat",
+                                             "qtwebengine_devtools_resources.pak",
                                              "qtwebengine_resources.pak",
                                              "qtwebengine_resources_100p.pak",
                                              "qtwebengine_resources_200p.pak"};
@@ -1570,13 +1595,29 @@ static bool deployWebEngineCore(const QMap<QString, QString> &qmakeVariables,
                                  + QStringLiteral("/qtwebengine_locales"));
     if (!translations.isDir()) {
         std::wcerr << "Warning: Cannot find the translation files of the QtWebEngine module at "
-            << QDir::toNativeSeparators(translations.absoluteFilePath()) << '.';
+            << QDir::toNativeSeparators(translations.absoluteFilePath()) << ".\n";
         return true;
     }
-    // Missing translations may cause crashes, ignore --no-translations.
-    return createDirectory(options.translationsDirectory, errorMessage)
-        && updateFile(translations.absoluteFilePath(), options.translationsDirectory,
-                      options.updateFileFlags, options.json, errorMessage);
+    if (options.translations) {
+        // Copy the whole translations directory.
+        return createDirectory(options.translationsDirectory, errorMessage)
+                && updateFile(translations.absoluteFilePath(), options.translationsDirectory,
+                              options.updateFileFlags, options.json, errorMessage);
+    } else {
+        // Translations have been turned off, but QtWebEngine needs at least one.
+        const QFileInfo enUSpak(translations.filePath() + QStringLiteral("/en-US.pak"));
+        if (!enUSpak.exists()) {
+            std::wcerr << "Warning: Cannot find "
+                       << QDir::toNativeSeparators(enUSpak.absoluteFilePath()) << ".\n";
+            return true;
+        }
+        const QString webEngineTranslationsDir = options.translationsDirectory + QLatin1Char('/')
+                + translations.fileName();
+        if (!createDirectory(webEngineTranslationsDir, errorMessage))
+            return false;
+        return updateFile(enUSpak.absoluteFilePath(), webEngineTranslationsDir,
+                          options.updateFileFlags, options.json, errorMessage);
+    }
 }
 
 int main(int argc, char **argv)

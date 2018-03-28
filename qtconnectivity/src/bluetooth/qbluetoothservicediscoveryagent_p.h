@@ -73,7 +73,7 @@ QT_END_NAMESPACE
 #endif
 
 #ifdef QT_WINRT_BLUETOOTH
-class QWinRTBluetoothServiceDiscoveryWorker;
+#include <QtCore/QPointer>
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -84,6 +84,10 @@ class ServiceDiscoveryBroadcastReceiver;
 class LocalDeviceBroadcastReceiver;
 #include <QtAndroidExtras/QAndroidJniObject>
 #include <QtBluetooth/QBluetoothLocalDevice>
+#endif
+
+#ifdef QT_WINRT_BLUETOOTH
+class QWinRTBluetoothServiceDiscoveryWorker;
 #endif
 
 class QBluetoothServiceDiscoveryAgentPrivate

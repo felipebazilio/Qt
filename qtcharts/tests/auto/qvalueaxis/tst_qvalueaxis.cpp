@@ -71,6 +71,7 @@ private slots:
     void autoscale_data();
     void autoscale();
     void reverse();
+    void labels();
 
 private:
     QValueAxis* m_valuesaxis;
@@ -285,6 +286,7 @@ void tst_QValueAxis::range_raw_data()
     QTest::newRow("1.0 - 101.0") << (qreal)-1.0 << (qreal)101.0;
     QTest::newRow("25.0 - 75.0") << (qreal)25.0 << (qreal)75.0;
     QTest::newRow("101.0") << (qreal)40.0 << (qreal)60.0;
+    QTest::newRow("smallNumbers") << (qreal)-1e-12 << (qreal)1e-13;
 }
 
 void tst_QValueAxis::range_raw()
@@ -434,6 +436,41 @@ void tst_QValueAxis::reverse()
     m_view->show();
     QTest::qWaitForWindowShown(m_view);
     QCOMPARE(m_valuesaxis->isReverse(), true);
+}
+
+void tst_QValueAxis::labels()
+{
+    m_chart->setAxisX(m_valuesaxis, m_series);
+    m_view->resize(300, 300);
+    m_view->show();
+    QTest::qWaitForWindowShown(m_view);
+
+    QList<QGraphicsItem *> childItems = m_chart->scene()->items();
+    QList<QGraphicsTextItem *> textItems;
+    QStringList originalStrings;
+    for (QGraphicsItem *i : childItems) {
+        if (QGraphicsTextItem *text = qgraphicsitem_cast<QGraphicsTextItem *>(i)) {
+            if (text->parentItem() != m_chart) {
+                textItems << text;
+                originalStrings << text->toPlainText();
+            }
+        }
+    }
+    m_valuesaxis->setLabelFormat("%.0f");
+    // Wait for the format to have updated
+    QTest::qWait(100);
+    QStringList updatedStrings;
+    for (QGraphicsTextItem *i : textItems)
+        updatedStrings << i->toPlainText();
+    // The order will be the same as we kept the order of the items
+    QVERIFY(originalStrings != updatedStrings);
+    updatedStrings.clear();
+    // The labels should be back to the original defaults
+    m_valuesaxis->setLabelFormat("");
+    QTest::qWait(100);
+    for (QGraphicsTextItem *i : textItems)
+        updatedStrings << i->toPlainText();
+    QCOMPARE(originalStrings, updatedStrings);
 }
 
 QTEST_MAIN(tst_QValueAxis)

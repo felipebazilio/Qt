@@ -80,9 +80,10 @@ void HTTPFileSource::Impl::onReplyFinished()
         return;
     }
 
+    QByteArray data = reply->readAll();
     QVector<HTTPRequest*>& requestsVector = it.value().second;
     for (auto req : requestsVector) {
-        req->handleNetworkReply(reply);
+        req->handleNetworkReply(reply, data);
     }
 
     m_pending.erase(it);
@@ -108,4 +109,4 @@ uint32_t HTTPFileSource::maximumConcurrentRequests() {
 #endif
 }
 
-} // mbgl
+} // namespace mbgl

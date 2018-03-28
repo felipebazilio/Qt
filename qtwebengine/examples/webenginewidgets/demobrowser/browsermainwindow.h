@@ -3,7 +3,7 @@
 ** Copyright (C) 2016 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
-** This file is part of the demonstration applications of the Qt Toolkit.
+** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
 ** Commercial License Usage
@@ -56,9 +56,7 @@
 #include <QtCore/QUrl>
 
 QT_BEGIN_NAMESPACE
-#ifndef QT_NO_PRINTER
 class QPrinter;
-#endif
 class QWebEnginePage;
 QT_END_NAMESPACE
 
@@ -142,10 +140,8 @@ private slots:
     void slotSwapFocus();
     void slotHandlePdfPrinted(const QByteArray&);
 
-#ifndef QT_NO_PRINTER
     void slotHandlePagePrinted(bool result);
     void printRequested(QWebEnginePage *page);
-#endif
     void geometryChangeRequested(const QRect &geometry);
     void updateToolbarActionText(bool visible);
     void updateBookmarksToolbarActionText(bool visible);
@@ -180,9 +176,7 @@ private:
     QAction *m_restoreLastSession;
     QAction *m_addBookmark;
 
-#ifndef QT_NO_PRINTER
     QPrinter *m_currentPrinter;
-#endif
 
     QIcon m_reloadIcon;
     QIcon m_stopIcon;

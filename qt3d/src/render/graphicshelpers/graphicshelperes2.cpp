@@ -62,6 +62,15 @@ QT_BEGIN_NAMESPACE
 #define GL_SAMPLER_2D_ARRAY_SHADOW        0x8DC4
 #endif
 
+// ES 2.0 FBO
+#ifndef GL_DRAW_FRAMEBUFFER
+#define GL_DRAW_FRAMEBUFFER               0x8CA9
+#endif
+
+#ifndef GL_READ_FRAMEBUFFER
+#define GL_READ_FRAMEBUFFER               0x8CA8
+#endif
+
 namespace Qt3DRender {
 namespace Render {
 
@@ -199,6 +208,9 @@ QVector<ShaderUniform> GraphicsHelperES2::programUniformsAndLocations(GLuint pro
         uniformName[sizeof(uniformName) - 1] = '\0';
         uniform.m_location = m_funcs->glGetUniformLocation(programId, uniformName);
         uniform.m_name = QString::fromUtf8(uniformName, uniformNameLength);
+        // Work around for uniform array names that aren't returned with [0] by some drivers
+        if (uniform.m_size > 1 && !uniform.m_name.endsWith(QLatin1String("[0]")))
+            uniform.m_name.append(QLatin1String("[0]"));
         uniforms.append(uniform);
     }
     return uniforms;
@@ -318,9 +330,20 @@ void GraphicsHelperES2::releaseFrameBufferObject(GLuint frameBufferId)
     m_funcs->glDeleteFramebuffers(1, &frameBufferId);
 }
 
-void GraphicsHelperES2::bindFrameBufferObject(GLuint frameBufferId)
+void GraphicsHelperES2::bindFrameBufferObject(GLuint frameBufferId, FBOBindMode mode)
 {
-    m_funcs->glBindFramebuffer(GL_FRAMEBUFFER, frameBufferId);
+    switch (mode) {
+    case FBODraw:
+        m_funcs->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, frameBufferId);
+        return;
+    case FBORead:
+        m_funcs->glBindFramebuffer(GL_READ_FRAMEBUFFER, frameBufferId);
+        return;
+    case FBOReadAndDraw:
+    default:
+        m_funcs->glBindFramebuffer(GL_FRAMEBUFFER, frameBufferId);
+        return;
+    }
 }
 
 GLuint GraphicsHelperES2::boundFrameBufferObject()

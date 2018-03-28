@@ -79,10 +79,15 @@ QT_END_NAMESPACE
 #endif
 
 #ifdef QT_WINRT_BLUETOOTH
-class QWinRTBluetoothDeviceDiscoveryWorker;
+#include <QtCore/QPointer>
+#include <QtCore/QTimer>
 #endif
 
 QT_BEGIN_NAMESPACE
+
+#ifdef QT_WINRT_BLUETOOTH
+class QWinRTBluetoothDeviceDiscoveryWorker;
+#endif
 
 class QBluetoothDeviceDiscoveryAgentPrivate
 #if defined(QT_ANDROID_BLUETOOTH) || defined(QT_WINRT_BLUETOOTH)
@@ -163,7 +168,6 @@ private:
 private slots:
     void registerDevice(const QBluetoothDeviceInfo &info);
     void onScanFinished();
-    void onScanCanceled();
 
 private:
     void disconnectAndClearWorker();

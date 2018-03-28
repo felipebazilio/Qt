@@ -59,8 +59,6 @@ T.MenuItem {
         font: control.font
         color: control.enabled ? Default.textDarkColor : Default.textDisabledColor
         elide: Text.ElideRight
-        visible: control.text
-        horizontalAlignment: Text.AlignLeft
         verticalAlignment: Text.AlignVCenter
     }
 
@@ -72,16 +70,13 @@ T.MenuItem {
         source: control.checkable ? "qrc:/qt-project.org/imports/QtQuick/Controls.2/images/check.png" : ""
     }
 
-    background: Item {
+    background: Rectangle {
         implicitWidth: 200
         implicitHeight: 40
-
-        Rectangle {
-            x: 1
-            y: 1
-            width: parent.width - 2
-            height: parent.height - 2
-            color: control.visualFocus || control.down ? Default.delegateColor : "transparent"
-        }
+        x: 1
+        y: 1
+        width: parent.width - 2
+        height: parent.height - 2
+        color: control.visualFocus || control.down ? Default.delegateColor : "transparent"
     }
 }

@@ -996,6 +996,7 @@ void QQuickStackView::componentComplete()
         element = QQuickStackElement::fromString(d->initialItem.toString(), this, &error);
     if (!error.isEmpty()) {
         d->warn(error);
+        delete element;
     } else if (d->pushElement(element)) {
         emit depthChanged();
         d->setCurrentItem(element);
@@ -1033,6 +1034,13 @@ bool QQuickStackView::childMouseEventFilter(QQuickItem *item, QEvent *event)
     QQuickWindow *window = item->window();
     return window && !window->mouseGrabberItem();
 }
+
+#if QT_CONFIG(quicktemplates2_multitouch)
+void QQuickStackView::touchEvent(QTouchEvent *event)
+{
+    event->ignore(); // QTBUG-65084
+}
+#endif
 
 #if QT_CONFIG(accessibility)
 QAccessible::Role QQuickStackView::accessibleRole() const

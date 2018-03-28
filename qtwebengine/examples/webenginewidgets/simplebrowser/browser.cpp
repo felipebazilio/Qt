@@ -1,12 +1,22 @@
 /****************************************************************************
 **
 ** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -40,38 +50,30 @@
 
 #include "browser.h"
 #include "browserwindow.h"
-#include "webview.h"
-#include <QAuthenticator>
+
+#include <QWebEngineProfile>
 
 Browser::Browser()
 {
+    // Quit application if the download manager window is the only remaining window
+    m_downloadManagerWidget.setAttribute(Qt::WA_QuitOnClose, false);
+
+    QObject::connect(
+        QWebEngineProfile::defaultProfile(), &QWebEngineProfile::downloadRequested,
+        &m_downloadManagerWidget, &DownloadManagerWidget::downloadRequested);
+    QObject::connect(
+        &m_otrProfile, &QWebEngineProfile::downloadRequested,
+        &m_downloadManagerWidget, &DownloadManagerWidget::downloadRequested);
 }
 
-Browser::~Browser()
+BrowserWindow *Browser::createWindow(bool offTheRecord)
 {
-    qDeleteAll(m_windows);
-    m_windows.clear();
-}
-
-Browser &Browser::instance()
-{
-    static Browser browser;
-    return browser;
-}
-
-QVector<BrowserWindow*> Browser::windows()
-{
-    return m_windows;
-}
-
-void Browser::addWindow(BrowserWindow *mainWindow)
-{
-    if (m_windows.contains(mainWindow))
-        return;
-    m_windows.prepend(mainWindow);
+    auto profile = offTheRecord ? &m_otrProfile : QWebEngineProfile::defaultProfile();
+    auto mainWindow = new BrowserWindow(this, profile);
+    m_windows.append(mainWindow);
     QObject::connect(mainWindow, &QObject::destroyed, [this, mainWindow]() {
         m_windows.removeOne(mainWindow);
     });
     mainWindow->show();
+    return mainWindow;
 }
-

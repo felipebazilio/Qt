@@ -1,12 +1,22 @@
 /****************************************************************************
 **
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the QtBluetooth module.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -53,7 +63,7 @@ Item {
     BluetoothDiscoveryModel {
         id: btModel
         running: true
-        discoveryMode: BluetoothDiscoveryModel.MinimalServiceDiscovery
+        discoveryMode: BluetoothDiscoveryModel.FullServiceDiscovery
     //! [BtDiscoveryModel-1]
         onRunningChanged : {
             if (!btModel.running && top.state == "begin" && !serviceFound) {
@@ -81,7 +91,7 @@ Item {
         }
     //! [BtDiscoveryModel-2]
     //! [BtDiscoveryModel-3]
-        uuidFilter: "e8e10f95-1a70-4b27-9ccf-02010264e9c8"
+        uuidFilter: targetUuid //e8e10f95-1a70-4b27-9ccf-02010264e9c8
     }
     //! [BtDiscoveryModel-3]
 
@@ -91,8 +101,24 @@ Item {
         connected: true
 
         onSocketStateChanged: {
-            console.log("Connected to server")
-            top.state = "chatActive"
+            switch (socketState) {
+                case BluetoothSocket.Unconnected:
+                case BluetoothSocket.NoServiceSet:
+                    searchBox.animationRunning = false;
+                    searchBox.setText("\nNo connection. \n\nPlease restart app.");
+                    top.state = "begin";
+                    break;
+                case BluetoothSocket.Connected:
+                    console.log("Connected to server ");
+                    top.state = "chatActive"; // move to chat UI
+                    break;
+                case BluetoothSocket.Connecting:
+                case BluetoothSocket.ServiceLookup:
+                case BluetoothSocket.Closing:
+                case BluetoothSocket.Listening:
+                case BluetoothSocket.Bound:
+                    break;
+            }
         }
     //! [BluetoothSocket-1]
     //! [BluetoothSocket-3]
@@ -107,6 +133,7 @@ Item {
         }
     //! [BluetoothSocket-4]
     //! [BluetoothSocket-2]
+        //...
     }
     //! [BluetoothSocket-2]
 

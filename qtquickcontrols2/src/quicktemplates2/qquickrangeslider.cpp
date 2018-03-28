@@ -36,6 +36,7 @@
 
 #include "qquickrangeslider_p.h"
 #include "qquickcontrol_p_p.h"
+#include "qquickdeferredexecute_p_p.h"
 
 #include <QtCore/qscopedpointer.h>
 #include <QtQuick/private/qquickwindow_p.h>
@@ -66,6 +67,13 @@ QT_BEGIN_NAMESPACE
         first.value: 25
         second.value: 75
     }
+    \endcode
+
+    In order to perform an action when the value for a particular handle changes,
+    use the following syntax:
+
+    \code
+    first.onValueChanged: console.log("first.value changed to " + first.value)
     \endcode
 
     The \l {first.position} and \l {second.position} properties are expressed as
@@ -102,13 +110,16 @@ public:
     void setPosition(qreal position, bool ignoreOtherPosition = false);
     void updatePosition(bool ignoreOtherPosition = false);
 
+    void cancelHandle();
+    void executeHandle(bool complete = false);
+
     static QQuickRangeSliderNodePrivate *get(QQuickRangeSliderNode *node);
 
     qreal value;
     bool isPendingValue;
     qreal pendingValue;
     qreal position;
-    QQuickItem *handle;
+    QQuickDeferredPointer<QQuickItem> handle;
     QQuickRangeSlider *slider;
     bool pressed;
     bool hovered;
@@ -140,6 +151,26 @@ void QQuickRangeSliderNodePrivate::updatePosition(bool ignoreOtherPosition)
     if (!qFuzzyCompare(slider->from(), slider->to()))
         pos = (value - slider->from()) / (slider->to() - slider->from());
     setPosition(pos, ignoreOtherPosition);
+}
+
+static inline QString handleName() { return QStringLiteral("handle"); }
+
+void QQuickRangeSliderNodePrivate::cancelHandle()
+{
+    Q_Q(QQuickRangeSliderNode);
+    quickCancelDeferred(q, handleName());
+}
+
+void QQuickRangeSliderNodePrivate::executeHandle(bool complete)
+{
+    Q_Q(QQuickRangeSliderNode);
+    if (handle.wasExecuted())
+        return;
+
+    if (!handle || complete)
+        quickBeginDeferred(q, handleName(), handle);
+    if (complete)
+        quickCompleteDeferred(q, handleName(), handle);
 }
 
 QQuickRangeSliderNodePrivate *QQuickRangeSliderNodePrivate::get(QQuickRangeSliderNode *node)
@@ -220,7 +251,9 @@ qreal QQuickRangeSliderNode::visualPosition() const
 
 QQuickItem *QQuickRangeSliderNode::handle() const
 {
-    Q_D(const QQuickRangeSliderNode);
+    QQuickRangeSliderNodePrivate *d = const_cast<QQuickRangeSliderNodePrivate *>(d_func());
+    if (!d->handle)
+        d->executeHandle();
     return d->handle;
 }
 
@@ -230,14 +263,17 @@ void QQuickRangeSliderNode::setHandle(QQuickItem *handle)
     if (d->handle == handle)
         return;
 
-    QQuickControlPrivate::destroyDelegate(d->handle, d->slider);
+    if (!d->handle.isExecuting())
+        d->cancelHandle();
+
+    delete d->handle;
     d->handle = handle;
     if (handle) {
         if (!handle->parentItem())
             handle->setParentItem(d->slider);
 
-        QQuickItem *firstHandle = d->slider->first()->handle();
-        QQuickItem *secondHandle = d->slider->second()->handle();
+        QQuickItem *firstHandle = QQuickRangeSliderNodePrivate::get(d->slider->first())->handle;
+        QQuickItem *secondHandle = QQuickRangeSliderNodePrivate::get(d->slider->second())->handle;
         if (firstHandle && secondHandle) {
             // The order of property assignments in QML is undefined,
             // but we need the first handle to be before the second due
@@ -256,7 +292,8 @@ void QQuickRangeSliderNode::setHandle(QQuickItem *handle)
 
         handle->setActiveFocusOnTab(true);
     }
-    emit handleChanged();
+    if (!d->handle.isExecuting())
+        emit handleChanged();
 }
 
 bool QQuickRangeSliderNode::isPressed() const
@@ -625,7 +662,7 @@ void QQuickRangeSlider::setTo(qreal to)
         \li This property holds the value of the first handle in the range
             \c from - \c to.
 
-            If \l to is greater than \l from, the value of the first handle
+            If \l from is greater than \l to, the value of the first handle
             must be greater than the second, and vice versa.
 
             The default value is \c 0.0.
@@ -682,7 +719,7 @@ QQuickRangeSliderNode *QQuickRangeSlider::first() const
         \li This property holds the value of the second handle in the range
             \c from - \c to.
 
-            If \l to is greater than \l from, the value of the first handle
+            If \l from is greater than \l to, the value of the first handle
             must be greater than the second, and vice versa.
 
             The default value is \c 0.0.
@@ -801,33 +838,6 @@ void QQuickRangeSlider::setOrientation(Qt::Orientation orientation)
 }
 
 /*!
-    \since QtQuick.Controls 2.2 (Qt 5.9)
-    \qmlproperty bool QtQuick.Controls::RangeSlider::live
-
-    This property holds whether the slider provides live updates for the \l first.value
-    and \l second.value properties while the respective handles are dragged.
-
-    The default value is \c true.
-
-    \sa first.value, second.value
-*/
-bool QQuickRangeSlider::live() const
-{
-    Q_D(const QQuickRangeSlider);
-    return d->live;
-}
-
-void QQuickRangeSlider::setLive(bool live)
-{
-    Q_D(QQuickRangeSlider);
-    if (d->live == live)
-        return;
-
-    d->live = live;
-    emit liveChanged();
-}
-
-/*!
     \qmlmethod void QtQuick.Controls::RangeSlider::setValues(real firstValue, real secondValue)
 
     Sets \l first.value and \l second.value with the given arguments.
@@ -882,6 +892,33 @@ void QQuickRangeSlider::setValues(qreal firstValue, qreal secondValue)
     // If we don't do this last, the positions may be incorrect.
     firstPrivate->updatePosition(true);
     secondPrivate->updatePosition();
+}
+
+/*!
+    \since QtQuick.Controls 2.2 (Qt 5.9)
+    \qmlproperty bool QtQuick.Controls::RangeSlider::live
+
+    This property holds whether the slider provides live updates for the \l first.value
+    and \l second.value properties while the respective handles are dragged.
+
+    The default value is \c true.
+
+    \sa first.value, second.value
+*/
+bool QQuickRangeSlider::live() const
+{
+    Q_D(const QQuickRangeSlider);
+    return d->live;
+}
+
+void QQuickRangeSlider::setLive(bool live)
+{
+    Q_D(QQuickRangeSlider);
+    if (d->live == live)
+        return;
+
+    d->live = live;
+    emit liveChanged();
 }
 
 void QQuickRangeSlider::focusInEvent(QFocusEvent *event)
@@ -1038,13 +1075,27 @@ void QQuickRangeSlider::mirrorChange()
     emit d->second->visualPositionChanged();
 }
 
+void QQuickRangeSlider::classBegin()
+{
+    Q_D(QQuickRangeSlider);
+    QQuickControl::classBegin();
+
+    QQmlContext *context = qmlContext(this);
+    if (context) {
+        QQmlEngine::setContextForObject(d->first, context);
+        QQmlEngine::setContextForObject(d->second, context);
+    }
+}
+
 void QQuickRangeSlider::componentComplete()
 {
     Q_D(QQuickRangeSlider);
-    QQuickControl::componentComplete();
-
     QQuickRangeSliderNodePrivate *firstPrivate = QQuickRangeSliderNodePrivate::get(d->first);
     QQuickRangeSliderNodePrivate *secondPrivate = QQuickRangeSliderNodePrivate::get(d->second);
+    firstPrivate->executeHandle(true);
+    secondPrivate->executeHandle(true);
+
+    QQuickControl::componentComplete();
 
     if (firstPrivate->isPendingValue || secondPrivate->isPendingValue
         || !qFuzzyCompare(d->from, defaultFrom) || !qFuzzyCompare(d->to, defaultTo)) {

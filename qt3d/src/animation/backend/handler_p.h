@@ -53,6 +53,7 @@
 #include <Qt3DCore/qaspectjob.h>
 #include <Qt3DCore/qnodeid.h>
 #include <QtCore/qscopedpointer.h>
+#include <QtCore/qmutex.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -116,7 +117,12 @@ public:
 
     QVector<Qt3DCore::QAspectJobPtr> jobsToExecute(qint64 time);
 
+    void cleanupHandleList(QVector<HAnimationClip> *clips);
+    void cleanupHandleList(QVector<HClipAnimator> *animators);
+    void cleanupHandleList(QVector<HBlendedClipAnimator> *animators);
+
 private:
+    QMutex m_mutex;
     QScopedPointer<AnimationClipLoaderManager> m_animationClipLoaderManager;
     QScopedPointer<ClipAnimatorManager> m_clipAnimatorManager;
     QScopedPointer<BlendedClipAnimatorManager> m_blendedClipAnimatorManager;

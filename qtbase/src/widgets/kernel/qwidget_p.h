@@ -64,10 +64,14 @@
 #include "QtWidgets/qsizepolicy.h"
 #include "QtWidgets/qstyle.h"
 #include "QtWidgets/qapplication.h"
+#if QT_CONFIG(graphicseffect)
 #include <private/qgraphicseffect_p.h>
+#endif
+#if QT_CONFIG(graphicsview)
 #include "QtWidgets/qgraphicsproxywidget.h"
 #include "QtWidgets/qgraphicsscene.h"
 #include "QtWidgets/qgraphicsview.h"
+#endif
 #include <private/qgesture_p.h>
 
 QT_BEGIN_NAMESPACE
@@ -230,7 +234,7 @@ struct QWExtra {
     // Regular pointers (keep them together to avoid gaps on 64 bits architectures).
     void *glContext; // if the widget is hijacked by QGLWindowSurface
     QTLWExtra *topextra; // only useful for TLWs
-#ifndef QT_NO_GRAPHICSVIEW
+#if QT_CONFIG(graphicsview)
     QGraphicsProxyWidget *proxyWidget; // if the widget is embedded
 #endif
 #ifndef QT_NO_CURSOR
@@ -338,6 +342,13 @@ public:
     QPainter *sharedPainter() const;
     void setSharedPainter(QPainter *painter);
     QWidgetBackingStore *maybeBackingStore() const;
+
+    template <typename T>
+    void repaint(T t);
+
+    template <typename T>
+    void update(T t);
+
     void init(QWidget *desktopWidget, Qt::WindowFlags f);
     void create_sys(WId window, bool initializeWindow, bool destroyOldWindow);
     void createRecursively();
@@ -402,7 +413,7 @@ public:
                                 const QRegion &rgn, const QPoint &offset, int flags,
                                 QPainter *sharedPainter, QWidgetBackingStore *backingStore);
 
-#ifndef QT_NO_GRAPHICSVIEW
+#if QT_CONFIG(graphicsview)
     static QGraphicsProxyWidget * nearestGraphicsProxyWidget(const QWidget *origin);
 #endif
     void repaint_sys(const QRegion &rgn);
@@ -418,9 +429,9 @@ public:
     void setOpaque(bool opaque);
     void updateIsTranslucent();
     bool paintOnScreen() const;
-#ifndef QT_NO_GRAPHICSEFFECT
+#if QT_CONFIG(graphicseffect)
     void invalidateGraphicsEffectsRecursively();
-#endif //QT_NO_GRAPHICSEFFECT
+#endif // QT_CONFIG(graphicseffect)
 
     const QRegion &getOpaqueChildren() const;
     void setDirtyOpaqueRegion();
@@ -509,6 +520,9 @@ public:
     void setLayoutItemMargins(int left, int top, int right, int bottom);
     void setLayoutItemMargins(QStyle::SubElement element, const QStyleOption *opt = 0);
 
+    void updateContentsRect();
+    QMargins safeAreaMargins() const;
+
     // aboutToDestroy() is called just before the contents of
     // QWidget::destroy() is executed. It's used to signal QWidget
     // sub-classes that their internals are about to be released.
@@ -530,7 +544,7 @@ public:
     static QRect screenGeometry(const QWidget *widget)
     {
         QRect screen;
-#ifndef QT_NO_GRAPHICSVIEW
+#if QT_CONFIG(graphicsview)
         QGraphicsProxyWidget *ancestorProxy = widget->d_func()->nearestGraphicsProxyWidget(widget);
         //It's embedded if it has an ancestor
         if (ancestorProxy) {
@@ -589,10 +603,10 @@ public:
 
     inline QRect effectiveRectFor(const QRect &rect) const
     {
-#ifndef QT_NO_GRAPHICSEFFECT
+#if QT_CONFIG(graphicseffect)
         if (graphicsEffect && graphicsEffect->isEnabled())
             return graphicsEffect->boundingRectFor(rect).toAlignedRect();
-#endif //QT_NO_GRAPHICSEFFECT
+#endif // QT_CONFIG(graphicseffect)
         return rect;
     }
 
@@ -694,10 +708,10 @@ public:
     QString toolTip;
     int toolTipDuration;
 #endif
-#ifndef QT_NO_STATUSTIP
+#if QT_CONFIG(statustip)
     QString statusTip;
 #endif
-#ifndef QT_NO_WHATSTHIS
+#if QT_CONFIG(whatsthis)
     QString whatsThis;
 #endif
 #ifndef QT_NO_ACCESSIBILITY
@@ -882,7 +896,7 @@ struct QWidgetPaintContext
     QPainter *painter;
 };
 
-#ifndef QT_NO_GRAPHICSEFFECT
+#if QT_CONFIG(graphicseffect)
 class QWidgetEffectSourcePrivate : public QGraphicsEffectSourcePrivate
 {
 public:
@@ -935,7 +949,7 @@ public:
     QTransform lastEffectTransform;
     bool updateDueToGraphicsEffect;
 };
-#endif //QT_NO_GRAPHICSEFFECT
+#endif // QT_CONFIG(graphicseffect)
 
 inline QWExtra *QWidgetPrivate::extraData() const
 {

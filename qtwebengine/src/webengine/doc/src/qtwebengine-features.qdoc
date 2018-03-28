@@ -1,7 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2017 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the documentation of the Qt Toolkit.
 **
@@ -11,8 +11,8 @@
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Free Documentation License Usage
 ** Alternatively, this file may be used under the terms of the GNU Free
@@ -20,7 +20,7 @@
 ** Foundation and appearing in the file included in the packaging of
 ** this file. Please review the following information to ensure
 ** the GNU Free Documentation License version 1.3 requirements
-** will be met: http://www.gnu.org/copyleft/fdl.html.
+** will be met: https://www.gnu.org/licenses/fdl-1.3.html.
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
@@ -45,6 +45,7 @@
         \li \l{Pepper Plugin API}
         \li \l{Print to PDF}
         \li \l{Spellchecker}
+        \li \l{Touch}
         \li \l{View Source}
         \li \l{WebRTC}
     \endlist
@@ -54,10 +55,10 @@
     Qt WebEngine supports the MPEG-4 Part 14 (MP4) file format only if the
     required proprietary audio and video codecs, such as H.264 and MPEG layer-3
     (MP3), have been enabled. Proprietary codecs can be enabled by passing the
-    following option to qmake when building Qt WebEngine:
+    following option when configuring Qt:
 
     \code
-    qmake WEBENGINE_CONFIG+=use_proprietary_codecs
+    -proprietary-codecs
     \endcode
 
     \warning When distributing proprietary codec libraries, you must acquire
@@ -295,7 +296,7 @@
     When the Qt WebEngine spellchecker initializes, it will try to load the
     \c bdict dictionaries and to check them for consistency. First, it searches
     \e qtwebengine_dictionaries directories relative to the executable,
-    then it will look in \c QT_INSTALL_PREFIX/qtwebengines_dictionaries.
+    then it will look in \c QT_INSTALL_PREFIX/qtwebengine_dictionaries.
 
     Spellchecking is disabled by default and can be enabled per profile by
     using the QWebEngineProfile::setSpellCheckEnabled() method in widget-based
@@ -311,6 +312,22 @@
     \l{WebEngine Widgets Spellchecker Example}{Spellchecker Example}.
 
     Support for this feature was added in Qt 5.8.0.
+
+    \section1 Touch
+
+    Qt WebEngine supports touch devices for navigating and interacting with web pages.
+
+    Applications can prohibit the use of touch events in the following ways:
+
+    \list
+        \li Passing the flag \c --touch-events=disabled on the command line will disable touch event
+        support in JavaScript API (meaning \c ontouchstart and related handlers will not be present
+        in the \c document.window object). Touch events will still be delivered to web pages.
+
+       \li Installing an event filter object using \l {QObject::installEventFilter} on the WebEngine
+       view focus proxy object, and filtering out all touch events.
+
+    \endlist
 
     \section1 View Source
 

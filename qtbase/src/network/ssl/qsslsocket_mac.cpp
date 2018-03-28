@@ -47,6 +47,7 @@
 #include "qsslkey_p.h"
 
 #include <QtCore/qmessageauthenticationcode.h>
+#include <QtCore/qoperatingsystemversion.h>
 #include <QtCore/qcryptographichash.h>
 #include <QtCore/qdatastream.h>
 #include <QtCore/qsysinfo.h>
@@ -92,7 +93,7 @@ EphemeralSecKeychain::EphemeralSecKeychain()
 {
     const auto uuid = QUuid::createUuid();
     if (uuid.isNull()) {
-        qCWarning(lcSsl) << "Failed to create an unique keychain name";
+        qCWarning(lcSsl) << "Failed to create a unique keychain name";
         return;
     }
 
@@ -931,7 +932,7 @@ bool QSslSocketBackendPrivate::setSessionCertificate(QString &errorDescription, 
 #endif
         QCFType<CFDictionaryRef> options = CFDictionaryCreate(nullptr, keys, values, nKeys,
                                                               nullptr, nullptr);
-        CFArrayRef items = nullptr;
+        QCFType<CFArrayRef> items;
         OSStatus err = SecPKCS12Import(pkcs12, options, &items);
         if (err != noErr) {
 #ifdef QSSLSOCKET_DEBUG
@@ -972,7 +973,7 @@ bool QSslSocketBackendPrivate::setSessionCertificate(QString &errorDescription, 
 
         CFArrayAppendValue(certs, identity);
 
-        QCFType<CFArrayRef> chain((CFArrayRef)CFDictionaryGetValue(import, kSecImportItemCertChain));
+        CFArrayRef chain = (CFArrayRef)CFDictionaryGetValue(import, kSecImportItemCertChain);
         if (chain) {
             for (CFIndex i = 1, e = CFArrayGetCount(chain); i < e; ++i)
                 CFArrayAppendValue(certs, CFArrayGetValueAtIndex(chain, i));
@@ -1108,6 +1109,12 @@ bool QSslSocketBackendPrivate::verifySessionProtocol() const
         protocolOk = (sessionProtocol() >= QSsl::SslV3);
     else if (configuration.protocol == QSsl::SecureProtocols)
         protocolOk = (sessionProtocol() >= QSsl::TlsV1_0);
+    else if (configuration.protocol == QSsl::TlsV1_0OrLater)
+        protocolOk = (sessionProtocol() >= QSsl::TlsV1_0);
+    else if (configuration.protocol == QSsl::TlsV1_1OrLater)
+        protocolOk = (sessionProtocol() >= QSsl::TlsV1_1);
+    else if (configuration.protocol == QSsl::TlsV1_2OrLater)
+        protocolOk = (sessionProtocol() >= QSsl::TlsV1_2);
     else
         protocolOk = (sessionProtocol() == configuration.protocol);
 
@@ -1241,13 +1248,17 @@ bool QSslSocketBackendPrivate::verifyPeerTrust()
     // actual system CA certificate list (which most use-cases need) other than
     // by letting SecTrustEvaluate fall through to the system list; so, in this case
     // (even though the client code may have provided its own certs), we retain
-    // the default behavior.
+    // the default behavior. Note, with macOS SDK below 10.12 using 'trust my
+    // anchors only' may result in some valid chains rejected, apparently the
+    // ones containing intermediated certificates; so we use this functionality
+    // on more recent versions only.
+
+    bool anchorsFromConfigurationOnly = false;
 
 #ifdef Q_OS_MACOS
-    const bool anchorsFromConfigurationOnly = true;
-#else
-    const bool anchorsFromConfigurationOnly = false;
-#endif
+    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::MacOSSierra)
+        anchorsFromConfigurationOnly = true;
+#endif // Q_OS_MACOS
 
     SecTrustSetAnchorCertificatesOnly(trust, anchorsFromConfigurationOnly);
 

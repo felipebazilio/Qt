@@ -1686,7 +1686,8 @@ bool QSslSocket::waitForDisconnected(int msecs)
 
     if (!d->plainSocket)
         return false;
-    if (d->mode == UnencryptedMode)
+    // Forward to the plain socket unless the connection is secure.
+    if (d->mode == UnencryptedMode && !d->autoStartHandshake)
         return d->plainSocket->waitForDisconnected(msecs);
 
     QElapsedTimer stopWatch;
@@ -1697,6 +1698,17 @@ bool QSslSocket::waitForDisconnected(int msecs)
         if (!waitForEncrypted(msecs))
             return false;
     }
+    // We are delaying the disconnect, if the write buffer is not empty.
+    // So, start the transmission.
+    if (!d->writeBuffer.isEmpty())
+        d->transmit();
+
+    // At this point, the socket might be disconnected, if disconnectFromHost()
+    // was called just after the connectToHostEncrypted() call. Also, we can
+    // lose the connection as a result of the transmit() call.
+    if (state() == UnconnectedState)
+        return true;
+
     bool retVal = d->plainSocket->waitForDisconnected(qt_subtract_from_timeout(msecs, stopWatch.elapsed()));
     if (!retVal) {
         setSocketState(d->plainSocket->state());
@@ -2286,6 +2298,9 @@ void QSslSocketPrivate::createPlainSocket(QIODevice::OpenMode openMode)
     q->connect(plainSocket, SIGNAL(channelBytesWritten(int, qint64)),
                q, SLOT(_q_channelBytesWrittenSlot(int, qint64)),
                Qt::DirectConnection);
+    q->connect(plainSocket, SIGNAL(readChannelFinished()),
+               q, SLOT(_q_readChannelFinishedSlot()),
+               Qt::DirectConnection);
 #ifndef QT_NO_NETWORKPROXY
     q->connect(plainSocket, SIGNAL(proxyAuthenticationRequired(QNetworkProxy,QAuthenticator*)),
                q, SIGNAL(proxyAuthenticationRequired(QNetworkProxy,QAuthenticator*)));
@@ -2502,6 +2517,15 @@ void QSslSocketPrivate::_q_channelBytesWrittenSlot(int channel, qint64 written)
     Q_Q(QSslSocket);
     if (mode == QSslSocket::UnencryptedMode)
         emit q->channelBytesWritten(channel, written);
+}
+
+/*!
+    \internal
+*/
+void QSslSocketPrivate::_q_readChannelFinishedSlot()
+{
+    Q_Q(QSslSocket);
+    emit q->readChannelFinished();
 }
 
 /*!

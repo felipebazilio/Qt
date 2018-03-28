@@ -38,6 +38,7 @@
 #include "qquickcontrol_p_p.h"
 #include "qquickabstractbutton_p.h"
 #include "qquickpopup_p_p.h"
+#include "qquickdeferredexecute_p_p.h"
 
 #include <QtCore/qregexp.h>
 #include <QtCore/qabstractitemmodel.h>
@@ -252,6 +253,12 @@ public:
     void handleRelease(const QPointF &point) override;
     void handleUngrab() override;
 
+    void cancelIndicator();
+    void executeIndicator(bool complete = false);
+
+    void cancelPopup();
+    void executePopup(bool complete = false);
+
     bool flat;
     bool down;
     bool hasDown;
@@ -268,8 +275,8 @@ public:
     QQuickItem *pressedItem;
     QQmlInstanceModel *delegateModel;
     QQmlComponent *delegate;
-    QQuickItem *indicator;
-    QQuickPopup *popup;
+    QQuickDeferredPointer<QQuickItem> indicator;
+    QQuickDeferredPointer<QQuickPopup> popup;
 
     struct ExtraData {
         ExtraData()
@@ -313,6 +320,9 @@ bool QQuickComboBoxPrivate::isPopupVisible() const
 
 void QQuickComboBoxPrivate::showPopup()
 {
+    if (!popup)
+        executePopup(true);
+
     if (popup && !popup->isVisible())
         popup->open();
 }
@@ -330,13 +340,10 @@ void QQuickComboBoxPrivate::hidePopup(bool accept)
 
 void QQuickComboBoxPrivate::togglePopup(bool accept)
 {
-    if (!popup)
-        return;
-
-    if (popup->isVisible())
-        hidePopup(accept);
-    else
+    if (!popup || !popup->isVisible())
         showPopup();
+    else
+        hidePopup(accept);
 }
 
 void QQuickComboBoxPrivate::popupVisibleChanged()
@@ -366,8 +373,11 @@ void QQuickComboBoxPrivate::createdItem(int index, QObject *object)
 {
     Q_Q(QQuickComboBox);
     QQuickItem *item = qobject_cast<QQuickItem *>(object);
-    if (popup && item && !item->parentItem()) {
-        item->setParentItem(popup->contentItem());
+    if (item && !item->parentItem()) {
+        if (popup)
+            item->setParentItem(popup->contentItem());
+        else
+            item->setParentItem(q);
         QQuickItemPrivate::get(item)->setCulled(true);
     }
 
@@ -662,6 +672,46 @@ void QQuickComboBoxPrivate::handleUngrab()
     q->setPressed(false);
 }
 
+static inline QString indicatorName() { return QStringLiteral("indicator"); }
+
+void QQuickComboBoxPrivate::cancelIndicator()
+{
+    Q_Q(QQuickComboBox);
+    quickCancelDeferred(q, indicatorName());
+}
+
+void QQuickComboBoxPrivate::executeIndicator(bool complete)
+{
+    Q_Q(QQuickComboBox);
+    if (indicator.wasExecuted())
+        return;
+
+    if (!indicator || complete)
+        quickBeginDeferred(q, indicatorName(), indicator);
+    if (complete)
+        quickCompleteDeferred(q, indicatorName(), indicator);
+}
+
+static inline QString popupName() { return QStringLiteral("popup"); }
+
+void QQuickComboBoxPrivate::cancelPopup()
+{
+    Q_Q(QQuickComboBox);
+    quickCancelDeferred(q, popupName());
+}
+
+void QQuickComboBoxPrivate::executePopup(bool complete)
+{
+    Q_Q(QQuickComboBox);
+    if (popup.wasExecuted())
+        return;
+
+    if (!popup || complete)
+        quickBeginDeferred(q, popupName(), popup);
+    if (complete)
+        quickCompleteDeferred(q, popupName(), popup);
+}
+
 QQuickComboBox::QQuickComboBox(QQuickItem *parent)
     : QQuickControl(*(new QQuickComboBoxPrivate), parent)
 {
@@ -677,14 +727,13 @@ QQuickComboBox::QQuickComboBox(QQuickItem *parent)
 QQuickComboBox::~QQuickComboBox()
 {
     Q_D(QQuickComboBox);
-    // Disconnect visibleChanged() to avoid a spurious highlightedIndexChanged() signal
-    // emission during the destruction of the (visible) popup. (QTBUG-57650)
-    QObjectPrivate::disconnect(d->popup, &QQuickPopup::visibleChanged, d, &QQuickComboBoxPrivate::popupVisibleChanged);
-
-    // Delete the popup directly instead of calling setPopup(nullptr) to avoid calling
-    // destroyDelegate(popup) and potentially accessing a destroyed QML context. (QTBUG-50992)
-    delete d->popup;
-    d->popup = nullptr;
+    if (d->popup) {
+        // Disconnect visibleChanged() to avoid a spurious highlightedIndexChanged() signal
+        // emission during the destruction of the (visible) popup. (QTBUG-57650)
+        QObjectPrivate::disconnect(d->popup.data(), &QQuickPopup::visibleChanged, d, &QQuickComboBoxPrivate::popupVisibleChanged);
+        delete d->popup;
+        d->popup = nullptr;
+    }
 }
 
 /*!
@@ -759,124 +808,6 @@ QQmlInstanceModel *QQuickComboBox::delegateModel() const
     return d->delegateModel;
 }
 
-/*!
-    \since QtQuick.Controls 2.2 (Qt 5.9)
-    \qmlproperty bool QtQuick.Controls::ComboBox::editable
-
-    This property holds whether the combo box is editable.
-
-    The default value is \c false.
-
-    \sa validator
-*/
-bool QQuickComboBox::isEditable() const
-{
-    Q_D(const QQuickComboBox);
-    return d->extra.isAllocated() && d->extra->editable;
-}
-
-void QQuickComboBox::setEditable(bool editable)
-{
-    Q_D(QQuickComboBox);
-    if (editable == isEditable())
-        return;
-
-    if (d->contentItem) {
-        if (editable) {
-            d->contentItem->installEventFilter(this);
-            if (QQuickTextInput *input = qobject_cast<QQuickTextInput *>(d->contentItem)) {
-                QObjectPrivate::connect(input, &QQuickTextInput::textChanged, d, &QQuickComboBoxPrivate::updateEditText);
-                QObjectPrivate::connect(input, &QQuickTextInput::accepted, d, &QQuickComboBoxPrivate::acceptInput);
-            }
-#if QT_CONFIG(cursor)
-            d->contentItem->setCursor(Qt::IBeamCursor);
-#endif
-        } else {
-            d->contentItem->removeEventFilter(this);
-            if (QQuickTextInput *input = qobject_cast<QQuickTextInput *>(d->contentItem)) {
-                QObjectPrivate::disconnect(input, &QQuickTextInput::textChanged, d, &QQuickComboBoxPrivate::updateEditText);
-                QObjectPrivate::disconnect(input, &QQuickTextInput::accepted, d, &QQuickComboBoxPrivate::acceptInput);
-            }
-#if QT_CONFIG(cursor)
-            d->contentItem->unsetCursor();
-#endif
-        }
-    }
-
-    d->extra.value().editable = editable;
-    setAccessibleProperty("editable", editable);
-    emit editableChanged();
-}
-
-/*!
-    \since QtQuick.Controls 2.1 (Qt 5.8)
-    \qmlproperty bool QtQuick.Controls::ComboBox::flat
-
-    This property holds whether the combo box button is flat.
-
-    A flat combo box button does not draw a background unless it is interacted
-    with. In comparison to normal combo boxes, flat combo boxes provide looks
-    that make them stand out less from the rest of the UI. For instance, when
-    placing a combo box into a tool bar, it may be desirable to make the combo
-    box flat so it matches better with the flat looks of tool buttons.
-
-    The default value is \c false.
-*/
-bool QQuickComboBox::isFlat() const
-{
-    Q_D(const QQuickComboBox);
-    return d->flat;
-}
-
-void QQuickComboBox::setFlat(bool flat)
-{
-    Q_D(QQuickComboBox);
-    if (d->flat == flat)
-        return;
-
-    d->flat = flat;
-    emit flatChanged();
-}
-
-/*!
-    \since QtQuick.Controls 2.2 (Qt 5.9)
-    \qmlproperty bool QtQuick.Controls::ComboBox::down
-
-    This property holds whether the combo box button is visually down.
-
-    Unless explicitly set, this property is \c true when either \c pressed
-    or \c popup.visible is \c true. To return to the default value, set this
-    property to \c undefined.
-
-    \sa pressed, popup
-*/
-bool QQuickComboBox::isDown() const
-{
-    Q_D(const QQuickComboBox);
-    return d->down;
-}
-
-void QQuickComboBox::setDown(bool down)
-{
-    Q_D(QQuickComboBox);
-    d->hasDown = true;
-
-    if (d->down == down)
-        return;
-
-    d->down = down;
-    emit downChanged();
-}
-
-void QQuickComboBox::resetDown()
-{
-    Q_D(QQuickComboBox);
-    if (!d->hasDown)
-        return;
-
-    setDown(d->pressed || d->isPopupVisible());
-    d->hasDown = false;
-}
 
 /*!
     \qmlproperty bool QtQuick.Controls::ComboBox::pressed
@@ -1006,34 +937,6 @@ void QQuickComboBox::resetDisplayText()
     d->updateCurrentText();
 }
 
-/*!
-    \since QtQuick.Controls 2.2 (Qt 5.9)
-    \qmlproperty string QtQuick.Controls::ComboBox::editText
-
-    This property holds the text in the text field of an editable combo box.
-
-    \sa editable
-*/
-QString QQuickComboBox::editText() const
-{
-    Q_D(const QQuickComboBox);
-    return d->extra.isAllocated() ? d->extra->editText : QString();
-}
-
-void QQuickComboBox::setEditText(const QString &text)
-{
-    Q_D(QQuickComboBox);
-    if (text == editText())
-        return;
-
-    d->extra.value().editText = text;
-    emit editTextChanged();
-}
-
-void QQuickComboBox::resetEditText()
-{
-    setEditText(QString());
-}
 
 /*!
     \qmlproperty string QtQuick.Controls::ComboBox::textRole
@@ -1115,7 +1018,9 @@ void QQuickComboBox::setDelegate(QQmlComponent* delegate)
 */
 QQuickItem *QQuickComboBox::indicator() const
 {
-    Q_D(const QQuickComboBox);
+    QQuickComboBoxPrivate *d = const_cast<QQuickComboBoxPrivate *>(d_func());
+    if (!d->indicator)
+        d->executeIndicator();
     return d->indicator;
 }
 
@@ -1125,13 +1030,17 @@ void QQuickComboBox::setIndicator(QQuickItem *indicator)
     if (d->indicator == indicator)
         return;
 
-    QQuickControlPrivate::destroyDelegate(d->indicator, this);
+    if (!d->indicator.isExecuting())
+        d->cancelIndicator();
+
+    delete d->indicator;
     d->indicator = indicator;
     if (indicator) {
         if (!indicator->parentItem())
             indicator->setParentItem(this);
     }
-    emit indicatorChanged();
+    if (!d->indicator.isExecuting())
+        emit indicatorChanged();
 }
 
 /*!
@@ -1149,7 +1058,9 @@ void QQuickComboBox::setIndicator(QQuickItem *indicator)
 */
 QQuickPopup *QQuickComboBox::popup() const
 {
-    Q_D(const QQuickComboBox);
+    QQuickComboBoxPrivate *d = const_cast<QQuickComboBoxPrivate *>(d_func());
+    if (!d->popup)
+        d->executePopup(isComponentComplete());
     return d->popup;
 }
 
@@ -1159,9 +1070,12 @@ void QQuickComboBox::setPopup(QQuickPopup *popup)
     if (d->popup == popup)
         return;
 
+    if (!d->popup.isExecuting())
+        d->cancelPopup();
+
     if (d->popup) {
-        QObjectPrivate::disconnect(d->popup, &QQuickPopup::visibleChanged, d, &QQuickComboBoxPrivate::popupVisibleChanged);
-        QQuickControlPrivate::destroyDelegate(d->popup, this);
+        QObjectPrivate::disconnect(d->popup.data(), &QQuickPopup::visibleChanged, d, &QQuickComboBoxPrivate::popupVisibleChanged);
+        delete d->popup;
     }
     if (popup) {
         QQuickPopupPrivate::get(popup)->allowVerticalFlip = true;
@@ -1169,7 +1083,156 @@ void QQuickComboBox::setPopup(QQuickPopup *popup)
         QObjectPrivate::connect(popup, &QQuickPopup::visibleChanged, d, &QQuickComboBoxPrivate::popupVisibleChanged);
     }
     d->popup = popup;
-    emit popupChanged();
+    if (!d->popup.isExecuting())
+        emit popupChanged();
+}
+
+/*!
+    \since QtQuick.Controls 2.1 (Qt 5.8)
+    \qmlproperty bool QtQuick.Controls::ComboBox::flat
+
+    This property holds whether the combo box button is flat.
+
+    A flat combo box button does not draw a background unless it is interacted
+    with. In comparison to normal combo boxes, flat combo boxes provide looks
+    that make them stand out less from the rest of the UI. For instance, when
+    placing a combo box into a tool bar, it may be desirable to make the combo
+    box flat so it matches better with the flat looks of tool buttons.
+
+    The default value is \c false.
+*/
+bool QQuickComboBox::isFlat() const
+{
+    Q_D(const QQuickComboBox);
+    return d->flat;
+}
+
+void QQuickComboBox::setFlat(bool flat)
+{
+    Q_D(QQuickComboBox);
+    if (d->flat == flat)
+        return;
+
+    d->flat = flat;
+    emit flatChanged();
+}
+
+/*!
+    \since QtQuick.Controls 2.2 (Qt 5.9)
+    \qmlproperty bool QtQuick.Controls::ComboBox::down
+
+    This property holds whether the combo box button is visually down.
+
+    Unless explicitly set, this property is \c true when either \c pressed
+    or \c popup.visible is \c true. To return to the default value, set this
+    property to \c undefined.
+
+    \sa pressed, popup
+*/
+bool QQuickComboBox::isDown() const
+{
+    Q_D(const QQuickComboBox);
+    return d->down;
+}
+
+void QQuickComboBox::setDown(bool down)
+{
+    Q_D(QQuickComboBox);
+    d->hasDown = true;
+
+    if (d->down == down)
+        return;
+
+    d->down = down;
+    emit downChanged();
+}
+
+void QQuickComboBox::resetDown()
+{
+    Q_D(QQuickComboBox);
+    if (!d->hasDown)
+        return;
+
+    setDown(d->pressed || d->isPopupVisible());
+    d->hasDown = false;
+}
+
+/*!
+    \since QtQuick.Controls 2.2 (Qt 5.9)
+    \qmlproperty bool QtQuick.Controls::ComboBox::editable
+
+    This property holds whether the combo box is editable.
+
+    The default value is \c false.
+
+    \sa validator
+*/
+bool QQuickComboBox::isEditable() const
+{
+    Q_D(const QQuickComboBox);
+    return d->extra.isAllocated() && d->extra->editable;
+}
+
+void QQuickComboBox::setEditable(bool editable)
+{
+    Q_D(QQuickComboBox);
+    if (editable == isEditable())
+        return;
+
+    if (d->contentItem) {
+        if (editable) {
+            d->contentItem->installEventFilter(this);
+            if (QQuickTextInput *input = qobject_cast<QQuickTextInput *>(d->contentItem)) {
+                QObjectPrivate::connect(input, &QQuickTextInput::textChanged, d, &QQuickComboBoxPrivate::updateEditText);
+                QObjectPrivate::connect(input, &QQuickTextInput::accepted, d, &QQuickComboBoxPrivate::acceptInput);
+            }
+#if QT_CONFIG(cursor)
+            d->contentItem->setCursor(Qt::IBeamCursor);
+#endif
+        } else {
+            d->contentItem->removeEventFilter(this);
+            if (QQuickTextInput *input = qobject_cast<QQuickTextInput *>(d->contentItem)) {
+                QObjectPrivate::disconnect(input, &QQuickTextInput::textChanged, d, &QQuickComboBoxPrivate::updateEditText);
+                QObjectPrivate::disconnect(input, &QQuickTextInput::accepted, d, &QQuickComboBoxPrivate::acceptInput);
+            }
+#if QT_CONFIG(cursor)
+            d->contentItem->unsetCursor();
+#endif
+        }
+    }
+
+    d->extra.value().editable = editable;
+    setAccessibleProperty("editable", editable);
+    emit editableChanged();
+}
+
+/*!
+    \since QtQuick.Controls 2.2 (Qt 5.9)
+    \qmlproperty string QtQuick.Controls::ComboBox::editText
+
+    This property holds the text in the text field of an editable combo box.
+
+    \sa editable
+*/
+QString QQuickComboBox::editText() const
+{
+    Q_D(const QQuickComboBox);
+    return d->extra.isAllocated() ? d->extra->editText : QString();
+}
+
+void QQuickComboBox::setEditText(const QString &text)
+{
+    Q_D(QQuickComboBox);
+    if (text == editText())
+        return;
+
+    d->extra.value().editText = text;
+    emit editTextChanged();
+}
+
+void QQuickComboBox::resetEditText()
+{
+    setEditText(QString());
 }
 
 /*!
@@ -1492,7 +1555,7 @@ void QQuickComboBox::keyReleaseEvent(QKeyEvent *event)
 {
     Q_D(QQuickComboBox);
     QQuickControl::keyReleaseEvent(event);
-    if (!d->popup || event->isAutoRepeat())
+    if (event->isAutoRepeat())
         return;
 
     switch (event->key()) {
@@ -1539,6 +1602,9 @@ void QQuickComboBox::wheelEvent(QWheelEvent *event)
 void QQuickComboBox::componentComplete()
 {
     Q_D(QQuickComboBox);
+    d->executeIndicator(true);
+    if (d->popup)
+        d->executePopup(true);
     QQuickControl::componentComplete();
 
     if (d->delegateModel && d->ownModel)

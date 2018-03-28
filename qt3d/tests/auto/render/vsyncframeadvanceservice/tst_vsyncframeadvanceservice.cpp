@@ -35,19 +35,49 @@ class FakeRenderThread Q_DECL_FINAL : public QThread
 public:
     FakeRenderThread(Qt3DRender::Render::VSyncFrameAdvanceService *tickService)
         : m_tickService(tickService)
+        , m_running(1)
+        , m_submitCount(0)
     {
     }
 
-    // QThread interface
+    int submitCount() const { return m_submitCount; }
+
+    void stopRunning()
+    {
+        m_running.fetchAndStoreOrdered(0);
+        m_submitSemaphore.release(1);
+    }
+
+    void enqueueRenderView()
+    {
+        m_submitSemaphore.release(1);
+    }
+
 protected:
+    // QThread interface
     void run() Q_DECL_FINAL
     {
-        QThread::msleep(1000);
         m_tickService->proceedToNextFrame();
+
+        while (true) {
+            if (!isReadyToSubmit())
+                break;
+            ++m_submitCount;
+            m_tickService->proceedToNextFrame();
+        }
     }
 
 private:
+    bool isReadyToSubmit()
+    {
+        m_submitSemaphore.acquire(1);
+        return m_running.load() == 1;
+    }
+
     Qt3DRender::Render::VSyncFrameAdvanceService *m_tickService;
+    QAtomicInt m_running;
+    QSemaphore m_submitSemaphore;
+    int m_submitCount;
 };
 
 class tst_VSyncFrameAdvanceService : public QObject
@@ -59,21 +89,25 @@ private Q_SLOTS:
     void checkSynchronisation()
     {
         // GIVEN
-        Qt3DRender::Render::VSyncFrameAdvanceService tickService;
+        Qt3DRender::Render::VSyncFrameAdvanceService tickService(true);
         FakeRenderThread renderThread(&tickService);
-        QElapsedTimer t;
 
         // WHEN
-        t.start();
         renderThread.start();
+
+        for (int i = 0; i < 10; ++i) {
+            tickService.waitForNextFrame();
+            renderThread.enqueueRenderView();
+        }
+
         tickService.waitForNextFrame();
 
-        // THEN
-        // we allow for a little margin by checking for 950
-        // instead of 1000
-        QVERIFY(t.elapsed() >= 950);
-    }
+        renderThread.stopRunning();
+        renderThread.wait();
 
+        // THEN
+        QCOMPARE(renderThread.submitCount(), 10);
+    }
 };
 
 QTEST_MAIN(tst_VSyncFrameAdvanceService)

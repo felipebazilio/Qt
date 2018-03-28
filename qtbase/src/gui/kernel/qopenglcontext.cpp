@@ -937,7 +937,9 @@ GLuint QOpenGLContext::defaultFramebufferObject() const
 
 /*!
     Makes the context current in the current thread, against the given
-    \a surface. Returns \c true if successful.
+    \a surface. Returns \c true if successful; otherwise returns \c false.
+    The latter may happen if the surface is not exposed, or the graphics
+    hardware is not available due to e.g. the application being suspended.
 
     If \a surface is 0 this is equivalent to calling doneCurrent().
 
@@ -1008,6 +1010,7 @@ bool QOpenGLContext::makeCurrent(QSurface *surface)
                             || qstrncmp(rendererString, "Adreno 4xx", 8) == 0 // Same as above but without the '(TM)'
                             || qstrcmp(rendererString, "GC800 core") == 0
                             || qstrcmp(rendererString, "GC1000 core") == 0
+                            || strstr(rendererString, "GC2000") != 0
                             || qstrcmp(rendererString, "Immersion.16") == 0;
             }
             needsWorkaroundSet = true;

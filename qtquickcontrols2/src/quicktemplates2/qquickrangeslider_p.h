@@ -65,6 +65,7 @@ class Q_QUICKTEMPLATES2_PRIVATE_EXPORT QQuickRangeSlider : public QQuickControl
     Q_PROPERTY(qreal stepSize READ stepSize WRITE setStepSize NOTIFY stepSizeChanged FINAL)
     Q_PROPERTY(SnapMode snapMode READ snapMode WRITE setSnapMode NOTIFY snapModeChanged FINAL)
     Q_PROPERTY(Qt::Orientation orientation READ orientation WRITE setOrientation NOTIFY orientationChanged FINAL)
+    // 2.2 (Qt 5.9)
     Q_PROPERTY(bool live READ live WRITE setLive NOTIFY liveChanged FINAL REVISION 2)
 
 public:
@@ -95,10 +96,11 @@ public:
     Qt::Orientation orientation() const;
     void setOrientation(Qt::Orientation orientation);
 
+    Q_INVOKABLE void setValues(qreal firstValue, qreal secondValue);
+
+    // 2.2 (Qt 5.9)
     bool live() const;
     void setLive(bool live);
-
-    Q_INVOKABLE void setValues(qreal firstValue, qreal secondValue);
 
 Q_SIGNALS:
     void fromChanged();
@@ -106,6 +108,7 @@ Q_SIGNALS:
     void stepSizeChanged();
     void snapModeChanged();
     void orientationChanged();
+    // 2.2 (Qt 5.9)
     Q_REVISION(2) void liveChanged();
 
 protected:
@@ -121,6 +124,7 @@ protected:
     void touchEvent(QTouchEvent *event) override;
 #endif
     void mirrorChange() override;
+    void classBegin() override;
     void componentComplete() override;
 
 #if QT_CONFIG(accessibility)
@@ -144,7 +148,9 @@ class Q_QUICKTEMPLATES2_PRIVATE_EXPORT QQuickRangeSliderNode : public QObject
     Q_PROPERTY(qreal visualPosition READ visualPosition NOTIFY visualPositionChanged FINAL)
     Q_PROPERTY(QQuickItem *handle READ handle WRITE setHandle NOTIFY handleChanged FINAL)
     Q_PROPERTY(bool pressed READ isPressed WRITE setPressed NOTIFY pressedChanged FINAL)
+    // 2.1 (Qt 5.8)
     Q_PROPERTY(bool hovered READ isHovered WRITE setHovered NOTIFY hoveredChanged FINAL REVISION 1)
+    Q_CLASSINFO("DeferredPropertyNames", "handle")
 
 public:
     explicit QQuickRangeSliderNode(qreal value, QQuickRangeSlider *slider);
@@ -162,6 +168,7 @@ public:
     bool isPressed() const;
     void setPressed(bool pressed);
 
+    // 2.1 (Qt 5.8)
     bool isHovered() const;
     void setHovered(bool hovered);
 
@@ -175,6 +182,7 @@ Q_SIGNALS:
     void visualPositionChanged();
     void handleChanged();
     void pressedChanged();
+    // 2.1 (Qt 5.8)
     Q_REVISION(1) void hoveredChanged();
 
 private:

@@ -36,6 +36,7 @@
 
 #include "qquickspinbox_p.h"
 #include "qquickcontrol_p_p.h"
+#include "qquickdeferredexecute_p_p.h"
 
 #include <QtGui/qguiapplication.h>
 #include <QtGui/qstylehints.h>
@@ -157,6 +158,31 @@ public:
     mutable QJSValue textFromValue;
     mutable QJSValue valueFromText;
     Qt::InputMethodHints inputMethodHints;
+};
+
+class QQuickSpinButtonPrivate : public QObjectPrivate
+{
+    Q_DECLARE_PUBLIC(QQuickSpinButton)
+
+public:
+    QQuickSpinButtonPrivate()
+        : pressed(false),
+          hovered(false),
+          indicator(nullptr)
+    {
+    }
+
+    static QQuickSpinButtonPrivate *get(QQuickSpinButton *button)
+    {
+        return button->d_func();
+    }
+
+    void cancelIndicator();
+    void executeIndicator(bool complete = false);
+
+    bool pressed;
+    bool hovered;
+    QQuickDeferredPointer<QQuickItem> indicator;
 };
 
 int QQuickSpinBoxPrivate::boundValue(int value) const
@@ -833,12 +859,29 @@ void QQuickSpinBox::wheelEvent(QWheelEvent *event)
 }
 #endif
 
+void QQuickSpinBox::classBegin()
+{
+    Q_D(QQuickSpinBox);
+    QQuickControl::classBegin();
+
+    QQmlContext *context = qmlContext(this);
+    if (context) {
+        QQmlEngine::setContextForObject(d->up, context);
+        QQmlEngine::setContextForObject(d->down, context);
+    }
+}
+
 void QQuickSpinBox::componentComplete()
 {
     Q_D(QQuickSpinBox);
+    QQuickSpinButtonPrivate::get(d->up)->executeIndicator(true);
+    QQuickSpinButtonPrivate::get(d->down)->executeIndicator(true);
+
     QQuickControl::componentComplete();
-    d->updateUpEnabled();
-    d->updateDownEnabled();
+    if (!d->setValue(d->value, false)) {
+        d->updateUpEnabled();
+        d->updateDownEnabled();
+    }
 }
 
 void QQuickSpinBox::itemChange(ItemChange change, const ItemChangeData &value)
@@ -857,6 +900,8 @@ void QQuickSpinBox::contentItemChange(QQuickItem *newItem, QQuickItem *oldItem)
 
     if (newItem) {
         newItem->setActiveFocusOnTab(true);
+        if (d->activeFocus)
+            newItem->forceActiveFocus(d->focusReason);
 #if QT_CONFIG(cursor)
         if (d->editable)
             newItem->setCursor(Qt::IBeamCursor);
@@ -888,20 +933,25 @@ void QQuickSpinBox::accessibilityActiveChanged(bool active)
 }
 #endif
 
-class QQuickSpinButtonPrivate : public QObjectPrivate
-{
-public:
-    QQuickSpinButtonPrivate()
-        : pressed(false),
-          hovered(false),
-          indicator(nullptr)
-    {
-    }
+static inline QString indicatorName() { return QStringLiteral("indicator"); }
 
-    bool pressed;
-    bool hovered;
-    QQuickItem *indicator;
-};
+void QQuickSpinButtonPrivate::cancelIndicator()
+{
+    Q_Q(QQuickSpinButton);
+    quickCancelDeferred(q, indicatorName());
+}
+
+void QQuickSpinButtonPrivate::executeIndicator(bool complete)
+{
+    Q_Q(QQuickSpinButton);
+    if (indicator.wasExecuted())
+        return;
+
+    if (!indicator || complete)
+        quickBeginDeferred(q, indicatorName(), indicator);
+    if (complete)
+        quickCompleteDeferred(q, indicatorName(), indicator);
+}
 
 QQuickSpinButton::QQuickSpinButton(QQuickSpinBox *parent)
     : QObject(*(new QQuickSpinButtonPrivate), parent)
@@ -924,6 +974,34 @@ void QQuickSpinButton::setPressed(bool pressed)
     emit pressedChanged();
 }
 
+QQuickItem *QQuickSpinButton::indicator() const
+{
+    QQuickSpinButtonPrivate *d = const_cast<QQuickSpinButtonPrivate *>(d_func());
+    if (!d->indicator)
+        d->executeIndicator();
+    return d->indicator;
+}
+
+void QQuickSpinButton::setIndicator(QQuickItem *indicator)
+{
+    Q_D(QQuickSpinButton);
+    if (d->indicator == indicator)
+        return;
+
+    if (!d->indicator.isExecuting())
+        d->cancelIndicator();
+
+    delete d->indicator;
+    d->indicator = indicator;
+
+    if (indicator) {
+        if (!indicator->parentItem())
+            indicator->setParentItem(static_cast<QQuickItem *>(parent()));
+    }
+    if (!d->indicator.isExecuting())
+        emit indicatorChanged();
+}
+
 bool QQuickSpinButton::isHovered() const
 {
     Q_D(const QQuickSpinButton);
@@ -938,28 +1016,6 @@ void QQuickSpinButton::setHovered(bool hovered)
 
     d->hovered = hovered;
     emit hoveredChanged();
-}
-
-QQuickItem *QQuickSpinButton::indicator() const
-{
-    Q_D(const QQuickSpinButton);
-    return d->indicator;
-}
-
-void QQuickSpinButton::setIndicator(QQuickItem *indicator)
-{
-    Q_D(QQuickSpinButton);
-    if (d->indicator == indicator)
-        return;
-
-    QQuickControlPrivate::destroyDelegate(d->indicator, d->parent);
-    d->indicator = indicator;
-
-    if (indicator) {
-        if (!indicator->parentItem())
-            indicator->setParentItem(static_cast<QQuickItem *>(parent()));
-    }
-    emit indicatorChanged();
 }
 
 QT_END_NAMESPACE

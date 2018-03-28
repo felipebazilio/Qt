@@ -722,7 +722,6 @@ qint64 QBluetoothSocketPrivate::writeData(const char *data, qint64 maxSize)
     env->SetByteArrayRegion(nativeData, 0, (qint32)maxSize, reinterpret_cast<const jbyte*>(data));
     outputStream.callMethod<void>("write", "([BII)V", nativeData, 0, (qint32)maxSize);
     env->DeleteLocalRef(nativeData);
-    emit q->bytesWritten(maxSize);
 
     if (env->ExceptionCheck()) {
         qCWarning(QT_BT_ANDROID) << "Error while writing";
@@ -733,6 +732,7 @@ qint64 QBluetoothSocketPrivate::writeData(const char *data, qint64 maxSize)
         return -1;
     }
 
+    emit q->bytesWritten(maxSize);
     return maxSize;
 }
 
@@ -877,6 +877,20 @@ qint64 QBluetoothSocketPrivate::bytesAvailable() const
         return inputThread->bytesAvailable();
 
     return 0;
+}
+
+qint64 QBluetoothSocketPrivate::bytesToWrite() const
+{
+    return 0; // nothing because always unbuffered
+}
+
+bool QBluetoothSocketPrivate::canReadLine() const
+{
+    // We cannot access buffer directly as it is part of different thread
+    if (inputThread)
+        return inputThread->canReadLine();
+
+    return false;
 }
 
 QT_END_NAMESPACE

@@ -71,6 +71,7 @@ void LayerFilterNode::sceneChangeEvent(const Qt3DCore::QSceneChangePtr &e)
         const auto change = qSharedPointerCast<QPropertyNodeAddedChange>(e);
         if (change->propertyName() == QByteArrayLiteral("layer"))
             m_layerIds.append(change->addedNodeId());
+        markDirty(AbstractRenderer::LayersDirty);
         break;
     }
 
@@ -78,13 +79,13 @@ void LayerFilterNode::sceneChangeEvent(const Qt3DCore::QSceneChangePtr &e)
         const auto change = qSharedPointerCast<QPropertyNodeRemovedChange>(e);
         if (change->propertyName() == QByteArrayLiteral("layer"))
             m_layerIds.removeOne(change->removedNodeId());
+        markDirty(AbstractRenderer::LayersDirty);
         break;
     }
 
     default:
         break;
     }
-    markDirty(AbstractRenderer::AllDirty);
 
     FrameGraphNode::sceneChangeEvent(e);
 }

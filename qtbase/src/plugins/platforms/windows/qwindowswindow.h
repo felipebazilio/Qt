@@ -208,6 +208,7 @@ public:
         Compositing = 0x200000,
         HasBorderInFullScreen = 0x400000,
         WithinDpiChanged = 0x800000,
+        ResizeMoveActive = 0x2000000
     };
 
     QWindowsWindow(QWindow *window, const QWindowsWindowData &data);
@@ -313,11 +314,15 @@ public:
     void alertWindow(int durationMs = 0);
     void stopAlertWindow();
 
+    void checkForScreenChanged();
+
     static void setTouchWindowTouchTypeStatic(QWindow *window, QWindowsWindowFunctions::TouchWindowTouchTypes touchTypes);
     void registerTouchWindow(QWindowsWindowFunctions::TouchWindowTouchTypes touchTypes = QWindowsWindowFunctions::NormalTouch);
     static void setHasBorderInFullScreenStatic(QWindow *window, bool border);
     void setHasBorderInFullScreen(bool border);
     static QString formatWindowTitle(const QString &title);
+
+    static const char *embeddedNativeParentHandleProperty;
 
 private:
     inline void show_sys() const;

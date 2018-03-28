@@ -356,6 +356,8 @@ void QQuickWebEngineViewPrivate::navigationRequested(int navigationType, const Q
     Q_EMIT q->navigationRequested(&navigationRequest);
 
     navigationRequestAction = navigationRequest.action();
+    if ((navigationRequestAction == WebContentsAdapterClient::AcceptRequest) && adapter && adapter->isFindTextInProgress())
+        adapter->stopFinding();
 }
 
 void QQuickWebEngineViewPrivate::javascriptDialog(QSharedPointer<JavaScriptDialogController> dialog)
@@ -1095,9 +1097,10 @@ void QQuickWebEngineViewPrivate::didFindText(quint64 requestId, int matchCount)
 
 void QQuickWebEngineViewPrivate::didPrintPage(quint64 requestId, const QByteArray &result)
 {
+    Q_Q(QQuickWebEngineView);
     QJSValue callback = m_callbacks.take(requestId);
     QJSValueList args;
-    args.append(QJSValue(result.data()));
+    args.append(qmlEngine(q)->toScriptValue(result));
     callback.call(args);
 }
 
@@ -1616,7 +1619,8 @@ void QQuickWebEngineView::triggerWebAction(WebAction action)
         break;
     case DownloadLinkToDisk:
         if (d->m_contextMenuData.linkUrl().isValid())
-            d->adapter->download(d->m_contextMenuData.linkUrl(), d->m_contextMenuData.suggestedFileName());
+            d->adapter->download(d->m_contextMenuData.linkUrl(), d->m_contextMenuData.suggestedFileName(),
+                                 d->m_contextMenuData.referrerUrl(), d->m_contextMenuData.referrerPolicy());
         break;
     case CopyImageToClipboard:
         if (d->m_contextMenuData.hasImageContent() &&
@@ -1643,7 +1647,8 @@ void QQuickWebEngineView::triggerWebAction(WebAction action)
     case DownloadImageToDisk:
     case DownloadMediaToDisk:
         if (d->m_contextMenuData.mediaUrl().isValid())
-            d->adapter->download(d->m_contextMenuData.mediaUrl(), d->m_contextMenuData.suggestedFileName());
+            d->adapter->download(d->m_contextMenuData.mediaUrl(), d->m_contextMenuData.suggestedFileName(),
+                                 d->m_contextMenuData.referrerUrl(), d->m_contextMenuData.referrerPolicy());
         break;
     case CopyMediaUrlToClipboard:
         if (d->m_contextMenuData.mediaUrl().isValid() &&

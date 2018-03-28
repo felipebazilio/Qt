@@ -23,6 +23,11 @@ for(libname, STATICLIBS) {
 DEFINES += LIBANGLE_IMPLEMENTATION LIBGLESV2_IMPLEMENTATION GL_APICALL= GL_GLEXT_PROTOTYPES= EGLAPI=
 !winrt: DEFINES += ANGLE_ENABLE_D3D9 ANGLE_SKIP_DXGI_1_2_CHECK
 
+QT_FOR_CONFIG += gui-private
+include($$OUT_PWD/../../../gui/qtgui-config.pri)
+
+qtConfig(angle_d3d11_qdtd): DEFINES += ANGLE_D3D11_QDTD_AVAILABLE
+
 HEADERS += \
     $$ANGLE_DIR/src/common/mathutil.h \
     $$ANGLE_DIR/src/common/blocklayout.h \
@@ -580,7 +585,7 @@ angle_d3d11: SHADERS = VS_Passthrough2D \
 for (SHADER, SHADERS) {
     INPUT = $$eval($${SHADER}.input)
     OUT_DIR = $$OUT_PWD/libANGLE/$$relative_path($$dirname($$INPUT), $$ANGLE_DIR/src/libANGLE)/compiled
-    fxc_$${SHADER}.commands = $$FXC /nologo /E $${SHADER} /T $$eval($${SHADER}.type) /Fh ${QMAKE_FILE_OUT} ${QMAKE_FILE_NAME}
+    fxc_$${SHADER}.commands = $$FXC -nologo -E $${SHADER} -T $$eval($${SHADER}.type) -Fh ${QMAKE_FILE_OUT} ${QMAKE_FILE_NAME}
     fxc_$${SHADER}.output = $$OUT_DIR/$$eval($${SHADER}.output)
     fxc_$${SHADER}.input = $$INPUT
     fxc_$${SHADER}.dependency_type = TYPE_C

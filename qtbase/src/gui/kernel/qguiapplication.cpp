@@ -1759,6 +1759,9 @@ void QGuiApplicationPrivate::processWindowSystemEvent(QWindowSystemInterfacePriv
     case QWindowSystemInterfacePrivate::WindowScreenChanged:
         QGuiApplicationPrivate::processWindowScreenChangedEvent(static_cast<QWindowSystemInterfacePrivate::WindowScreenChangedEvent *>(e));
         break;
+    case QWindowSystemInterfacePrivate::SafeAreaMarginsChanged:
+        QGuiApplicationPrivate::processSafeAreaMarginsChangedEvent(static_cast<QWindowSystemInterfacePrivate::SafeAreaMarginsChangedEvent *>(e));
+        break;
     case QWindowSystemInterfacePrivate::ApplicationStateChanged: {
         QWindowSystemInterfacePrivate::ApplicationStateChangedEvent * changeEvent = static_cast<QWindowSystemInterfacePrivate::ApplicationStateChangedEvent *>(e);
         QGuiApplicationPrivate::setApplicationState(changeEvent->newState, changeEvent->forcePropagate); }
@@ -1997,7 +2000,7 @@ void QGuiApplicationPrivate::processMouseEvent(QWindowSystemInterfacePrivate::Mo
 
 void QGuiApplicationPrivate::processWheelEvent(QWindowSystemInterfacePrivate::WheelEvent *e)
 {
-#ifndef QT_NO_WHEELEVENT
+#if QT_CONFIG(wheelevent)
     QWindow *window = e->window.data();
     QPointF globalPoint = e->globalPos;
     QPointF localPoint = e->localPos;
@@ -2027,7 +2030,7 @@ void QGuiApplicationPrivate::processWheelEvent(QWindowSystemInterfacePrivate::Wh
      QGuiApplication::sendSpontaneousEvent(window, &ev);
 #else
      Q_UNUSED(e);
-#endif /* ifndef QT_NO_WHEELEVENT */
+#endif // QT_CONFIG(wheelevent)
 }
 
 // Remember, Qt convention is:  keyboard state is state *before*
@@ -2212,6 +2215,17 @@ void QGuiApplicationPrivate::processWindowScreenChangedEvent(QWindowSystemInterf
     }
 }
 
+void QGuiApplicationPrivate::processSafeAreaMarginsChangedEvent(QWindowSystemInterfacePrivate::SafeAreaMarginsChangedEvent *wse)
+{
+    if (wse->window.isNull())
+        return;
+
+    // Handle by forwarding directly to QWindowPrivate, instead of sending spontaneous
+    // QEvent like most other functions, as there's no QEvent type for the safe area
+    // change, and we don't want to add one until we know that this is a good API.
+    qt_window_private(wse->window)->processSafeAreaMarginsChanged();
+}
+
 void QGuiApplicationPrivate::processThemeChanged(QWindowSystemInterfacePrivate::ThemeChangeEvent *tce)
 {
     if (self)
@@ -2302,7 +2316,7 @@ QGuiApplicationPrivate::TabletPointData &QGuiApplicationPrivate::tabletDevicePoi
 
 void QGuiApplicationPrivate::processTabletEvent(QWindowSystemInterfacePrivate::TabletEvent *e)
 {
-#ifndef QT_NO_TABLETEVENT
+#if QT_CONFIG(tabletevent)
     TabletPointData &pointData = tabletDevicePoint(e->uid);
 
     QEvent::Type type = QEvent::TabletMove;
@@ -2369,7 +2383,7 @@ void QGuiApplicationPrivate::processTabletEvent(QWindowSystemInterfacePrivate::T
 
 void QGuiApplicationPrivate::processTabletEnterProximityEvent(QWindowSystemInterfacePrivate::TabletEnterProximityEvent *e)
 {
-#ifndef QT_NO_TABLETEVENT
+#if QT_CONFIG(tabletevent)
     QTabletEvent ev(QEvent::TabletEnterProximity, QPointF(), QPointF(),
                     e->device, e->pointerType, 0, 0, 0,
                     0, 0, 0,
@@ -2383,7 +2397,7 @@ void QGuiApplicationPrivate::processTabletEnterProximityEvent(QWindowSystemInter
 
 void QGuiApplicationPrivate::processTabletLeaveProximityEvent(QWindowSystemInterfacePrivate::TabletLeaveProximityEvent *e)
 {
-#ifndef QT_NO_TABLETEVENT
+#if QT_CONFIG(tabletevent)
     QTabletEvent ev(QEvent::TabletLeaveProximity, QPointF(), QPointF(),
                     e->device, e->pointerType, 0, 0, 0,
                     0, 0, 0,
@@ -2868,7 +2882,7 @@ QPlatformDragQtResponse QGuiApplicationPrivate::processDrag(QWindow *w, const QM
     static QPointer<QWindow> currentDragWindow;
     static Qt::DropAction lastAcceptedDropAction = Qt::IgnoreAction;
     QPlatformDrag *platformDrag = platformIntegration()->drag();
-    if (!platformDrag) {
+    if (!platformDrag || (w && w->d_func()->blockedByModalWindow)) {
         lastAcceptedDropAction = Qt::IgnoreAction;
         return QPlatformDragQtResponse(false, lastAcceptedDropAction, QRect());
     }

@@ -750,8 +750,8 @@ void tst_QSqlDatabase::recordOCI()
         FieldDef("long raw", QVariant::ByteArray,       QByteArray("blah5")),
         FieldDef("raw(2000)", QVariant::ByteArray,      QByteArray("blah6"), false),
         FieldDef("blob", QVariant::ByteArray,           QByteArray("blah7")),
-        FieldDef("clob", QVariant::String,             QString("blah8")),
-        FieldDef("nclob", QVariant::String,            QString("blah9")),
+        FieldDef("clob", QVariant::ByteArray, QByteArray("blah8")),
+        FieldDef("nclob", QVariant::ByteArray, QByteArray("blah9")),
 //        FieldDef("bfile", QVariant::ByteArray,         QByteArray("blah10")),
 
         intytm,
@@ -1248,7 +1248,7 @@ void tst_QSqlDatabase::psql_schemas()
     QString table = schemaName + '.' + qTableName("qtesttable", __FILE__, db);
     QVERIFY_SQL(q, exec("CREATE TABLE " + table + " (id int primary key, name varchar(20))"));
 
-    QVERIFY(db.tables().contains(table));
+    QVERIFY(db.tables().contains(table, Qt::CaseInsensitive));
 
     QSqlRecord rec = db.record(table);
     QCOMPARE(rec.count(), 2);

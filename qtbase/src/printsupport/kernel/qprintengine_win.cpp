@@ -79,7 +79,7 @@ extern QMarginsF qt_convertMargins(const QMarginsF &margins, QPageLayout::Unit f
 static void draw_text_item_win(const QPointF &_pos, const QTextItemInt &ti, HDC hdc,
                                const QTransform &xform, const QPointF &topLeft);
 
-QWin32PrintEngine::QWin32PrintEngine(QPrinter::PrinterMode mode)
+QWin32PrintEngine::QWin32PrintEngine(QPrinter::PrinterMode mode, const QString &deviceId)
     : QAlphaPaintEngine(*(new QWin32PrintEnginePrivate),
                    PaintEngineFeatures(PrimitiveTransform
                                        | PixmapTransform
@@ -92,7 +92,7 @@ QWin32PrintEngine::QWin32PrintEngine(QPrinter::PrinterMode mode)
     d->mode = mode;
     QPlatformPrinterSupport *ps = QPlatformPrinterSupportPlugin::get();
     if (ps)
-        d->m_printDevice = ps->createDefaultPrintDevice();
+        d->m_printDevice = ps->createPrintDevice(deviceId.isEmpty() ? ps->defaultPrintDeviceId() : deviceId);
     d->m_pageLayout.setPageSize(d->m_printDevice.defaultPageSize());
     d->initialize();
 }
@@ -1499,7 +1499,7 @@ QVariant QWin32PrintEngine::property(PrintEnginePropertyKey key) const
         QList<QVariant> out;
         const auto inputSlots = d->m_printDevice.supportedInputSlots();
         out.reserve(inputSlots.size());
-        for (const QPrint::InputSlot inputSlot : inputSlots)
+        for (const QPrint::InputSlot &inputSlot : inputSlots)
             out << QVariant(inputSlot.id == QPrint::CustomInputSlot ? inputSlot.windowsId : int(inputSlot.id));
         value = out;
         break;

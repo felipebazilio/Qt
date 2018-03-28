@@ -206,6 +206,7 @@ protected:
     QVariant lastInsertId() const Q_DECL_OVERRIDE;
     bool execBatch(bool arrayBind = false) Q_DECL_OVERRIDE;
     void virtual_hook(int id, void *data) Q_DECL_OVERRIDE;
+    bool fetchNext() override;
 };
 
 class QOCIResultPrivate: public QSqlCachedResultPrivate
@@ -2097,6 +2098,14 @@ void QOCIResult::virtual_hook(int id, void *data)
     QSqlCachedResult::virtual_hook(id, data);
 }
 
+bool QOCIResult::fetchNext()
+{
+    Q_D(QOCIResult);
+    if (isForwardOnly())
+        d->cache.clear();
+    return QSqlCachedResult::fetchNext();
+}
+
 ////////////////////////////////////////////////////////////////////////////
 
 
@@ -2594,7 +2603,7 @@ QSqlIndex QOCIDriver::primaryIndex(const QString& tablename) const
     QString stmt(QLatin1String("select b.column_name, b.index_name, a.table_name, a.owner "
                   "from all_constraints a, all_ind_columns b "
                   "where a.constraint_type='P' "
-                  "and b.index_name = a.constraint_name "
+                  "and b.index_name = a.index_name "
                   "and b.index_owner = a.owner"));
 
     bool buildIndex = false;

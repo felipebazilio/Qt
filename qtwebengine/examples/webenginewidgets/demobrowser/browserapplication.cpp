@@ -3,7 +3,7 @@
 ** Copyright (C) 2016 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
-** This file is part of the demonstration applications of the Qt Toolkit.
+** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
 ** Commercial License Usage
@@ -314,7 +314,9 @@ void BrowserApplication::loadSettings()
     settings.endGroup();
     settings.beginGroup(QLatin1String("cookies"));
 
-    QWebEngineProfile::PersistentCookiesPolicy persistentCookiesPolicy = QWebEngineProfile::PersistentCookiesPolicy(settings.value(QLatin1String("persistentCookiesPolicy")).toInt());
+    QWebEngineProfile::PersistentCookiesPolicy persistentCookiesPolicy =
+            QWebEngineProfile::PersistentCookiesPolicy(settings.value(QLatin1String("persistentCookiesPolicy"),
+                                                                      QWebEngineProfile::AllowPersistentCookies).toInt());
     defaultProfile->setPersistentCookiesPolicy(persistentCookiesPolicy);
     QString pdataPath = settings.value(QLatin1String("persistentDataPath")).toString();
     defaultProfile->setPersistentStoragePath(pdataPath);

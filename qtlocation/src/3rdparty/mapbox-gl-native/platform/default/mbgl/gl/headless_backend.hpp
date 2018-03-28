@@ -1,57 +1,50 @@
 #pragma once
 
-#include <mbgl/gl/extension.hpp>
-
-#include <mbgl/map/backend.hpp>
+#include <mbgl/renderer/renderer_backend.hpp>
 
 #include <memory>
 #include <functional>
 
 namespace mbgl {
 
-class HeadlessDisplay;
-
-class HeadlessBackend : public Backend {
+class HeadlessBackend : public RendererBackend {
 public:
-    HeadlessBackend();
-    HeadlessBackend(std::shared_ptr<HeadlessDisplay>);
+    HeadlessBackend(Size = { 256, 256 });
     ~HeadlessBackend() override;
 
-    void invalidate() override;
-    void activate() override;
-    void deactivate() override;
-    void notifyMapChange(MapChange) override;
+    void bind() override;
+    Size getFramebufferSize() const override;
+    void updateAssumedState() override;
 
-    void setMapChangeCallback(std::function<void(MapChange)>&& cb) { mapChangeCallback = std::move(cb); }
+    void setSize(Size);
+    PremultipliedImage readStillImage();
 
-    struct Impl {
-        virtual ~Impl() {}
+    class Impl {
+    public:
+        virtual ~Impl() = default;
+        virtual gl::ProcAddress getExtensionFunctionPointer(const char*) = 0;
         virtual void activateContext() = 0;
         virtual void deactivateContext() {}
     };
 
 private:
     // Implementation specific functions
-    static gl::glProc initializeExtension(const char*);
+    gl::ProcAddress getExtensionFunctionPointer(const char*) override;
 
-    bool hasContext() const { return bool(impl); }
-    bool hasDisplay();
+    void activate() override;
+    void deactivate() override;
 
-    void createContext();
+    void createImpl();
 
 private:
-    void destroyContext();
-
-    void activateContext();
-    void deactivateContext();
-
     std::unique_ptr<Impl> impl;
-    std::shared_ptr<HeadlessDisplay> display;
 
-    bool extensionsLoaded = false;
+    Size size;
+    float pixelRatio;
     bool active = false;
 
-    std::function<void(MapChange)> mapChangeCallback;
+    class View;
+    std::unique_ptr<View> view;
 };
 
 } // namespace mbgl

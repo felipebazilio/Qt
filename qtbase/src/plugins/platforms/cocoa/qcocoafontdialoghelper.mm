@@ -37,8 +37,6 @@
 **
 ****************************************************************************/
 
-#ifndef QT_NO_FONTDIALOG
-
 #include <QtCore/qtimer.h>
 #include <QtGui/qfontdatabase.h>
 #include <qpa/qplatformtheme.h>
@@ -77,7 +75,7 @@ static QFont qfontForCocoaFont(NSFont *cocoaFont, const QFont &resolveFont)
 
 @class QT_MANGLE_NAMESPACE(QNSFontPanelDelegate);
 
-@interface QT_MANGLE_NAMESPACE(QNSFontPanelDelegate) : NSObject<NSWindowDelegate, QT_MANGLE_NAMESPACE(QNSPanelDelegate)>
+@interface QT_MANGLE_NAMESPACE(QNSFontPanelDelegate) : NSObject<NSWindowDelegate, QNSPanelDelegate>
 {
     @public
     NSFontPanel *mFontPanel;
@@ -402,5 +400,3 @@ QFont QCocoaFontDialogHelper::currentFont() const
 }
 
 QT_END_NAMESPACE
-
-#endif // QT_NO_FONTDIALOG

@@ -1,12 +1,22 @@
 /****************************************************************************
 **
 ** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -40,38 +50,35 @@
 
 #include "browser.h"
 #include "browserwindow.h"
+#include "webview.h"
 #include <QApplication>
 #include <QWebEngineSettings>
 
-QString getCommandLineUrlArgument()
+QUrl getCommandLineUrlArgument()
 {
     const QStringList args = QCoreApplication::arguments();
-    if (args.count() > 1) {
-        const QString lastArg = args.last();
-        const bool isValidUrl = QUrl::fromUserInput(lastArg).isValid();
-        if (isValidUrl)
-            return lastArg;
-    }
-    return QString();
+    if (args.count() > 1)
+        return QUrl::fromUserInput(args.last());
+    return QUrl();
 }
 
 int main(int argc, char **argv)
 {
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
 
     QApplication app(argc, argv);
-    app.setWindowIcon(QIcon(QLatin1String(":simplebrowser.svg")));
+    app.setWindowIcon(QIcon(QStringLiteral(":AppLogoColor.png")));
 
     QWebEngineSettings::defaultSettings()->setAttribute(QWebEngineSettings::PluginsEnabled, true);
 
-    BrowserWindow *window = new BrowserWindow();
-    Browser::instance().addWindow(window);
+    QUrl url = getCommandLineUrlArgument();
+    if (!url.isValid())
+        url = QStringLiteral("https://www.qt.io");
 
-    const QString url = getCommandLineUrlArgument();
-    if (!url.isEmpty())
-        window->loadPage(url);
-    else
-        window->loadHomePage();
+    Browser browser;
+    BrowserWindow *window = browser.createWindow();
+    window->currentTab()->setUrl(url);
 
     return app.exec();
 }

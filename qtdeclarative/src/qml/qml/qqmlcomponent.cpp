@@ -561,7 +561,7 @@ QQmlComponent::QQmlComponent(QQmlEngine *engine, QV4::CompiledData::CompilationU
     Q_D(QQmlComponent);
     d->compilationUnit = compilationUnit;
     d->start = start;
-    d->url = compilationUnit->url();
+    d->url = compilationUnit->finalUrl();
     d->progress = 1.0;
 }
 
@@ -878,19 +878,33 @@ QQmlComponentPrivate::beginCreate(QQmlContextData *context)
 }
 
 void QQmlComponentPrivate::beginDeferred(QQmlEnginePrivate *enginePriv,
-                                                 QObject *object, ConstructionState *state)
+                                                 QObject *object, DeferredState *deferredState)
 {
-    enginePriv->inProgressCreations++;
-    state->errors.clear();
-    state->completePending = true;
-
     QQmlData *ddata = QQmlData::get(object);
-    Q_ASSERT(ddata->deferredData);
-    QQmlData::DeferredData *deferredData = ddata->deferredData;
-    QQmlContextData *creationContext = 0;
-    state->creator.reset(new QQmlObjectCreator(deferredData->context->parent, deferredData->compilationUnit, creationContext));
-    if (!state->creator->populateDeferredProperties(object))
-        state->errors << state->creator->errors;
+    Q_ASSERT(!ddata->deferredData.isEmpty());
+
+    deferredState->constructionStates.reserve(ddata->deferredData.size());
+
+    for (QQmlData::DeferredData *deferredData : qAsConst(ddata->deferredData)) {
+        enginePriv->inProgressCreations++;
+
+        ConstructionState *state = new ConstructionState;
+        state->completePending = true;
+
+        QQmlContextData *creationContext = nullptr;
+        state->creator.reset(new QQmlObjectCreator(deferredData->context->parent, deferredData->compilationUnit, creationContext));
+
+        if (!state->creator->populateDeferredProperties(object, deferredData))
+            state->errors << state->creator->errors;
+
+        deferredState->constructionStates += state;
+    }
+}
+
+void QQmlComponentPrivate::completeDeferred(QQmlEnginePrivate *enginePriv, QQmlComponentPrivate::DeferredState *deferredState)
+{
+    for (ConstructionState *state : qAsConst(deferredState->constructionStates))
+        complete(enginePriv, state);
 }
 
 void QQmlComponentPrivate::complete(QQmlEnginePrivate *enginePriv, ConstructionState *state)

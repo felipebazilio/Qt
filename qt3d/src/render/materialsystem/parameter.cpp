@@ -87,10 +87,13 @@ void Parameter::sceneChangeEvent(const Qt3DCore::QSceneChangePtr &e)
         if (propertyChange->propertyName() == QByteArrayLiteral("name")) {
             m_name = propertyChange->value().toString();
             m_nameId = StringToInt::lookupId(m_name);
+            markDirty(AbstractRenderer::MaterialDirty | AbstractRenderer::ParameterDirty);
         } else if (propertyChange->propertyName() == QByteArrayLiteral("value")) {
             m_uniformValue = UniformValue::fromVariant(propertyChange->value());
+            markDirty(AbstractRenderer::ParameterDirty);
+        } else if (propertyChange->propertyName() == QByteArrayLiteral("enabled")) {
+            markDirty(AbstractRenderer::MaterialDirty | AbstractRenderer::ParameterDirty);
         }
-        markDirty(AbstractRenderer::AllDirty);
     }
 
     BackendNode::sceneChangeEvent(e);
@@ -99,16 +102,6 @@ void Parameter::sceneChangeEvent(const Qt3DCore::QSceneChangePtr &e)
 QString Parameter::name() const
 {
     return m_name;
-}
-
-int Parameter::nameId() const Q_DECL_NOTHROW
-{
-    return m_nameId;
-}
-
-UniformValue Parameter::uniformValue() const
-{
-    return m_uniformValue;
 }
 
 } // namespace Render

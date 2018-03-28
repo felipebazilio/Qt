@@ -58,15 +58,11 @@
 #include <qscrollarea.h>
 #include <qwidget.h>
 
-// Make a widget frameless to prevent size constraints of title bars
-// from interfering (Windows).
-static inline void setFrameless(QWidget *w)
-{
-    Qt::WindowFlags flags = w->windowFlags();
-    flags |= Qt::FramelessWindowHint;
-    flags &= ~(Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint);
-    w->setWindowFlags(flags);
-}
+#include <algorithm>
+
+#include <QtTest/private/qtesthelpers_p.h>
+
+using namespace QTestPrivate;
 
 class tst_QStyle : public QObject
 {
@@ -208,13 +204,12 @@ void tst_QStyle::drawItemPixmap()
     testWidget->resize(300, 300);
     testWidget->showNormal();
 
-    const QString imageFileName = QFINDTESTDATA("task_25863.png");
-    QVERIFY(!imageFileName.isEmpty());
-
-    QPixmap p(imageFileName, "PNG");
-    const QPixmap actualPix = testWidget->grab();
-
-    QCOMPARE(actualPix, p);
+    QImage image = testWidget->grab().toImage();
+    const QRgb green = QColor(Qt::green).rgb();
+    QVERIFY(image.reinterpretAsFormat(QImage::Format_RGB32));
+    const QRgb *bits = reinterpret_cast<const QRgb *>(image.constBits());
+    const QRgb *end = bits + image.byteCount() / sizeof(QRgb);
+    QVERIFY(std::all_of(bits, end, [green] (QRgb r) { return r == green; }));
     testWidget->hide();
 }
 

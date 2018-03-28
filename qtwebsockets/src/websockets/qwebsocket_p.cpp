@@ -596,6 +596,9 @@ void QWebSocketPrivate::makeConnections(const QTcpSocket *pTcpSocket)
             QObject::connect(sslSocket, &QSslSocket::encryptedBytesWritten, q,
                              &QWebSocket::bytesWritten);
             typedef void (QSslSocket:: *sslErrorSignalType)(const QList<QSslError> &);
+            QObjectPrivate::connect(sslSocket,
+                                    static_cast<sslErrorSignalType>(&QSslSocket::sslErrors),
+                                    this, &QWebSocketPrivate::_q_updateSslConfiguration);
             QObject::connect(sslSocket,
                              static_cast<sslErrorSignalType>(&QSslSocket::sslErrors),
                              q, &QWebSocket::sslErrors);
@@ -633,7 +636,7 @@ void QWebSocketPrivate::makeConnections(const QTcpSocket *pTcpSocket)
 void QWebSocketPrivate::releaseConnections(const QTcpSocket *pTcpSocket)
 {
     if (Q_LIKELY(pTcpSocket))
-        pTcpSocket->disconnect(pTcpSocket);
+        pTcpSocket->disconnect();
     m_dataProcessor.disconnect();
 }
 
@@ -1145,7 +1148,8 @@ void QWebSocketPrivate::socketDestroyed(QObject *socket)
  */
 void QWebSocketPrivate::processData()
 {
-    Q_ASSERT(m_pSocket);
+    if (!m_pSocket) // disconnected with data still in-bound
+        return;
     while (m_pSocket->bytesAvailable()) {
         if (state() == QAbstractSocket::ConnectingState) {
             if (!m_pSocket->canReadLine())

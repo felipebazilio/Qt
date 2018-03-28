@@ -78,9 +78,12 @@ public:
     void setValue(const QVariant &value);
     QVariant value() const;
 
+    bool isInitialized() const;
+
 Q_SIGNALS:
     void nameChanged(const QString &name);
     void valueChanged(const QVariant &value);
+    void initialized();
 
 private:
     QString name_;
@@ -100,7 +103,7 @@ class Q_LOCATION_PRIVATE_EXPORT QDeclarativeGeoServiceProvider : public QObject,
     Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
     Q_PROPERTY(QStringList availableServiceProviders READ availableServiceProviders CONSTANT)
     Q_PROPERTY(QQmlListProperty<QDeclarativeGeoServiceProviderParameter> parameters READ parameters)
-    Q_PROPERTY(QDeclarativeGeoServiceProviderRequirements *required READ requirements)
+    Q_PROPERTY(QDeclarativeGeoServiceProviderRequirements *required READ requirements WRITE setRequirements)
     Q_PROPERTY(QStringList locales READ locales WRITE setLocales NOTIFY localesChanged)
     Q_PROPERTY(QStringList preferred READ preferred WRITE setPreferred NOTIFY preferredChanged)
     Q_PROPERTY(bool allowExperimental READ allowExperimental WRITE setAllowExperimental NOTIFY allowExperimentalChanged)
@@ -182,6 +185,7 @@ public:
     QStringList availableServiceProviders();
 
     QDeclarativeGeoServiceProviderRequirements *requirements() const;
+    void setRequirements(QDeclarativeGeoServiceProviderRequirements *req);
 
     QStringList preferred() const;
     void setPreferred(const QStringList &val);
@@ -209,6 +213,8 @@ Q_SIGNALS:
     void allowExperimentalChanged(bool allow);
 
 private:
+    bool parametersReady();
+    void tryAttach();
     static void parameter_append(QQmlListProperty<QDeclarativeGeoServiceProviderParameter> *prop, QDeclarativeGeoServiceProviderParameter *mapObject);
     static int parameter_count(QQmlListProperty<QDeclarativeGeoServiceProviderParameter> *prop);
     static QDeclarativeGeoServiceProviderParameter *parameter_at(QQmlListProperty<QDeclarativeGeoServiceProviderParameter> *prop, int index);
@@ -258,6 +264,8 @@ public:
     void setPlacesRequirements(const QDeclarativeGeoServiceProvider::PlacesFeatures &features);
 
     Q_INVOKABLE bool matches(const QGeoServiceProvider *provider) const;
+
+    bool operator == (const QDeclarativeGeoServiceProviderRequirements &rhs) const;
 
 Q_SIGNALS:
     void mappingRequirementsChanged(const QDeclarativeGeoServiceProvider::MappingFeatures &features);

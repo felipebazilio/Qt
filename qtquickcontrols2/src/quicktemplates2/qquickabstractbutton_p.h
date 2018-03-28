@@ -64,6 +64,7 @@ class Q_QUICKTEMPLATES2_PRIVATE_EXPORT QQuickAbstractButton : public QQuickContr
     Q_PROPERTY(bool checkable READ isCheckable WRITE setCheckable NOTIFY checkableChanged FINAL)
     Q_PROPERTY(bool autoExclusive READ autoExclusive WRITE setAutoExclusive NOTIFY autoExclusiveChanged FINAL)
     Q_PROPERTY(QQuickItem *indicator READ indicator WRITE setIndicator NOTIFY indicatorChanged FINAL)
+    Q_CLASSINFO("DeferredPropertyNames", "background,contentItem,indicator")
 
 public:
     explicit QQuickAbstractButton(QQuickItem *parent = nullptr);
@@ -102,7 +103,6 @@ Q_SIGNALS:
     void released();
     void canceled();
     void clicked();
-    Q_REVISION(2) void toggled();
     void pressAndHold();
     void doubleClicked();
     void textChanged();
@@ -112,9 +112,13 @@ Q_SIGNALS:
     void checkableChanged();
     void autoExclusiveChanged();
     void indicatorChanged();
+    // 2.2 (Qt 5.9)
+    Q_REVISION(2) void toggled();
 
 protected:
     QQuickAbstractButton(QQuickAbstractButtonPrivate &dd, QQuickItem *parent);
+
+    void componentComplete() override;
 
     void focusOutEvent(QFocusEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;

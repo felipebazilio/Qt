@@ -351,6 +351,11 @@ void Module::setFileName(const QString &name)
     fileName = name;
 }
 
+void Module::setFinalUrl(const QString &url)
+{
+    finalUrl = url;
+}
+
 Function::Function(Module *module, Function *outer, const QString &name)
     : module(module)
     , pool(&module->pool)
@@ -360,6 +365,7 @@ Function::Function(Module *module, Function *outer, const QString &name)
     , insideWithOrCatch(0)
     , hasDirectEval(false)
     , usesArgumentsObject(false)
+    , usesThis(false)
     , isStrict(false)
     , isNamedExpression(false)
     , hasTry(false)

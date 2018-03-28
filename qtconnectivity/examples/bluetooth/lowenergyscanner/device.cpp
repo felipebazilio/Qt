@@ -1,13 +1,23 @@
 /***************************************************************************
 **
 ** Copyright (C) 2013 BlackBerry Limited. All rights reserved.
-** Copyright (C) 2015 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtBluetooth module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -55,11 +65,11 @@ Device::Device():
     //! [les-devicediscovery-1]
     discoveryAgent = new QBluetoothDeviceDiscoveryAgent();
     discoveryAgent->setLowEnergyDiscoveryTimeout(5000);
-    connect(discoveryAgent, SIGNAL(deviceDiscovered(const QBluetoothDeviceInfo&)),
-            this, SLOT(addDevice(const QBluetoothDeviceInfo&)));
-    connect(discoveryAgent, SIGNAL(error(QBluetoothDeviceDiscoveryAgent::Error)),
-            this, SLOT(deviceScanError(QBluetoothDeviceDiscoveryAgent::Error)));
-    connect(discoveryAgent, SIGNAL(finished()), this, SLOT(deviceScanFinished()));
+    connect(discoveryAgent, &QBluetoothDeviceDiscoveryAgent::deviceDiscovered,
+            this, &Device::addDevice);
+    connect(discoveryAgent, QOverload<QBluetoothDeviceDiscoveryAgent::Error>::of(&QBluetoothDeviceDiscoveryAgent::error),
+            this, &Device::deviceScanError);
+    connect(discoveryAgent, &QBluetoothDeviceDiscoveryAgent::finished, this, &Device::deviceScanFinished);
     //! [les-devicediscovery-1]
 
     setUpdate("Search");
@@ -169,16 +179,16 @@ void Device::scanServices(const QString &address)
     if (!controller) {
         // Connecting signals and slots for connecting to LE services.
         controller = new QLowEnergyController(currentDevice.getDevice());
-        connect(controller, SIGNAL(connected()),
-                this, SLOT(deviceConnected()));
-        connect(controller, SIGNAL(error(QLowEnergyController::Error)),
-                this, SLOT(errorReceived(QLowEnergyController::Error)));
-        connect(controller, SIGNAL(disconnected()),
-                this, SLOT(deviceDisconnected()));
-        connect(controller, SIGNAL(serviceDiscovered(QBluetoothUuid)),
-                this, SLOT(addLowEnergyService(QBluetoothUuid)));
-        connect(controller, SIGNAL(discoveryFinished()),
-                this, SLOT(serviceScanDone()));
+        connect(controller, &QLowEnergyController::connected,
+                this, &Device::deviceConnected);
+        connect(controller, QOverload<QLowEnergyController::Error>::of(&QLowEnergyController::error),
+                this, &Device::errorReceived);
+        connect(controller, &QLowEnergyController::disconnected,
+                this, &Device::deviceDisconnected);
+        connect(controller, &QLowEnergyController::serviceDiscovered,
+                this, &Device::addLowEnergyService);
+        connect(controller, &QLowEnergyController::discoveryFinished,
+                this, &Device::serviceScanDone);
     }
 
     if (isRandomAddress())
@@ -235,8 +245,8 @@ void Device::connectToService(const QString &uuid)
 
     if (service->state() == QLowEnergyService::DiscoveryRequired) {
         //! [les-service-3]
-        connect(service, SIGNAL(stateChanged(QLowEnergyService::ServiceState)),
-                this, SLOT(serviceDetailsDiscovered(QLowEnergyService::ServiceState)));
+        connect(service, &QLowEnergyService::stateChanged,
+                this, &Device::serviceDetailsDiscovered);
         service->discoverDetails();
         setUpdate("Back\n(Discovering details...)");
         //! [les-service-3]
@@ -250,7 +260,7 @@ void Device::connectToService(const QString &uuid)
         m_characteristics.append(cInfo);
     }
 
-    QTimer::singleShot(0, this, SIGNAL(characteristicsUpdated()));
+    QTimer::singleShot(0, this, &Device::characteristicsUpdated);
 }
 
 void Device::deviceConnected()

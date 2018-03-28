@@ -249,7 +249,7 @@ ReturnedValue QObjectWrapper::getQmlProperty(QQmlContextData *qmlContext, String
                 if (r.isValid()) {
                     if (r.scriptIndex != -1) {
                         return QV4::Encode::undefined();
-                    } else if (r.type) {
+                    } else if (r.type.isValid()) {
                         return QmlTypeWrapper::create(v4, d()->object(),
                                                       r.type, Heap::QmlTypeWrapper::ExcludeEnums);
                     } else if (r.importNamespace) {
@@ -977,8 +977,12 @@ void QObjectWrapper::destroyObject(bool lastCall)
         QQmlData *ddata = QQmlData::get(h->object(), false);
         if (ddata) {
             if (!h->object()->parent() && !ddata->indestructible) {
-                if (ddata && ddata->ownContext && ddata->context)
-                    ddata->context->emitDestruction();
+                if (ddata && ddata->ownContext) {
+                    Q_ASSERT(ddata->ownContext == ddata->context);
+                    ddata->ownContext->emitDestruction();
+                    ddata->ownContext = 0;
+                    ddata->context = 0;
+                }
                 // This object is notionally destroyed now
                 ddata->isQueuedForDeletion = true;
                 if (lastCall)
@@ -1964,10 +1968,10 @@ ReturnedValue QMetaObjectWrapper::callOverloadedConstructor(QV4::ExecutionEngine
 
     for (int i = 0; i < numberOfConstructors; i++) {
         const QQmlPropertyData & attempt = d()->constructors[i];
+        QQmlMetaObject::ArgTypeStorage storage;
         int methodArgumentCount = 0;
         int *methodArgTypes = 0;
         if (attempt.hasArguments()) {
-            QQmlMetaObject::ArgTypeStorage storage;
             int *args = object.constructorParameterTypes(attempt.coreIndex(), &storage, 0);
             if (!args) // Must be an unknown argument
                 continue;

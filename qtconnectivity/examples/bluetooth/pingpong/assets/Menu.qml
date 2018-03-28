@@ -1,12 +1,22 @@
 /***************************************************************************
 **
 ** Copyright (C) 2014 BlackBerry Limited. All rights reserved.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the QtBluetooth module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -47,17 +57,18 @@ Rectangle {
 
     Rectangle {
         width: parent.width
-        height: 70
+        height: headerText.implicitHeight *1.2
         border.width: 1
         border.color: "#363636"
         radius: 5
 
         Text {
+            id: headerText
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             anchors.fill: parent
             text: "Welcome to PingPong Game \n Please select an option"
-            font.pixelSize: 20
+            font.pointSize: 20
             elide: Text.ElideMiddle
             color: "#363636"
         }
@@ -67,10 +78,11 @@ Rectangle {
         id: startServer
         anchors.centerIn: parent
         width: parent.width/2
-        height: parent.height/5
+        height: startServerText.implicitHeight*5
         color: "#363636"
 
         Text {
+            id: startServerText
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             anchors.fill: parent
@@ -95,10 +107,11 @@ Rectangle {
         anchors.top: startServer.bottom
         anchors.topMargin: 10
         width: parent.width/2
-        height: parent.height/5
+        height: startClientText.implicitHeight*5
         color: "#363636"
 
         Text {
+            id: startClientText
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             anchors.fill: parent

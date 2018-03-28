@@ -152,6 +152,10 @@ struct Options
     QString rootPath;
     QStringList qmlImportPaths;
 
+    // lib c++ path
+    QString stdCppPath;
+    QString stdCppName = QStringLiteral("gnustl_shared");
+
     // Build information
     QString androidPlatform;
     QString architecture;
@@ -774,7 +778,8 @@ bool readInputFile(Options *options)
     {
         const QJsonValue deploymentDependencies = jsonObject.value(QStringLiteral("deployment-dependencies"));
         if (!deploymentDependencies.isUndefined()) {
-            const auto dependencies = deploymentDependencies.toString().splitRef(QLatin1Char(','));
+            QString deploymentDependenciesString = deploymentDependencies.toString();
+            const auto dependencies = deploymentDependenciesString.splitRef(QLatin1Char(','));
             for (const QStringRef &dependency : dependencies) {
                 QString path = options->qtInstallDirectory + QLatin1Char('/') + dependency;
                 if (QFileInfo(path).isDir()) {
@@ -864,6 +869,19 @@ bool readInputFile(Options *options)
         const QJsonValue extraPlugins = jsonObject.value(QStringLiteral("android-extra-plugins"));
         if (!extraPlugins.isUndefined())
             options->extraPlugins = extraPlugins.toString().split(QLatin1Char(','));
+    }
+
+    {
+        const QJsonValue stdcppPath = jsonObject.value(QStringLiteral("stdcpp-path"));
+        if (!stdcppPath.isUndefined()) {
+            options->stdCppPath = stdcppPath.toString();
+            auto name = QFileInfo(options->stdCppPath).baseName();
+            if (!name.startsWith(QLatin1String("lib"))) {
+                fprintf(stderr, "Invalid STD C++ library name.\n");
+                return false;
+            }
+            options->stdCppName = name.mid(3);
+        }
     }
 
     {
@@ -1132,7 +1150,7 @@ bool updateLibsXml(const Options &options)
 
     QString libsPath = QLatin1String("libs/") + options.architecture + QLatin1Char('/');
 
-    QString qtLibs = QLatin1String("<item>gnustl_shared</item>\n");
+    QString qtLibs = QLatin1String("<item>") + options.stdCppName + QLatin1String("</item>\n");
     QString bundledInLibs;
     QString bundledInAssets;
     for (const Options::BundledFile &bundledFile : options.bundledFiles) {
@@ -2516,22 +2534,23 @@ bool installApk(const Options &options)
     return true;
 }
 
-bool copyGnuStl(Options *options)
+bool copyStdCpp(Options *options)
 {
     if (options->deploymentMechanism == Options::Debug && !options->installApk)
         return true;
 
     if (options->verbose)
-        fprintf(stdout, "Copying GNU STL library\n");
+        fprintf(stdout, "Copying STL library\n");
 
-    QString filePath = options->ndkPath
+    QString filePath = !options->stdCppPath.isEmpty() ? options->stdCppPath
+                                                      : options->ndkPath
             + QLatin1String("/sources/cxx-stl/gnu-libstdc++/")
             + options->toolchainVersion
             + QLatin1String("/libs/")
             + options->architecture
             + QLatin1String("/libgnustl_shared.so");
     if (!QFile::exists(filePath)) {
-        fprintf(stderr, "GNU STL library does not exist at %s\n", qPrintable(filePath));
+        fprintf(stderr, "STL library does not exist at %s\n", qPrintable(filePath));
         return false;
     }
 
@@ -2540,13 +2559,18 @@ bool copyGnuStl(Options *options)
             ? options->temporaryDirectoryName + QLatin1String("/lib")
             : options->outputDirectory + QLatin1String("/libs/") + options->architecture;
 
-    if (!copyFileIfNewer(filePath, destinationDirectory
-                                   + QLatin1String("/libgnustl_shared.so"), options->verbose)) {
+    if (!copyFileIfNewer(filePath, destinationDirectory + QLatin1String("/lib")
+                                   + options->stdCppName + QLatin1String(".so"),
+                         options->verbose)) {
         return false;
     }
 
-    if (options->deploymentMechanism == Options::Debug && !deployToLocalTmp(options, QLatin1String("/lib/libgnustl_shared.so")))
+    if (options->deploymentMechanism == Options::Debug
+        && !deployToLocalTmp(options, QLatin1String("/lib/lib")
+                                      + options->stdCppName
+                                      + QLatin1String(".so"))) {
         return false;
+    }
 
     return true;
 }
@@ -2981,7 +3005,7 @@ int main(int argc, char *argv[])
     if (Q_UNLIKELY(options.timing))
         fprintf(stdout, "[TIMING] %d ms: Read dependencies\n", options.timer.elapsed());
 
-    if (options.deploymentMechanism != Options::Ministro && !copyGnuStl(&options))
+    if (options.deploymentMechanism != Options::Ministro && !copyStdCpp(&options))
         return CannotCopyGnuStl;
 
     if (Q_UNLIKELY(options.timing))

@@ -553,14 +553,21 @@ void QHttpNetworkConnectionChannel::handleStatus()
     case 302:
     case 303:
     case 305:
-    case 307: {
+    case 307:
+    case 308: {
         // Parse the response headers and get the "location" url
         QUrl redirectUrl = connection->d_func()->parseRedirectResponse(socket, reply);
         if (redirectUrl.isValid())
             reply->setRedirectUrl(redirectUrl);
 
-        if (qobject_cast<QHttpNetworkConnection *>(connection))
+        if ((statusCode == 307 || statusCode == 308) && !resetUploadData()) {
+            // Couldn't reset the upload data, which means it will be unable to POST the data -
+            // this would lead to a long wait until it eventually failed and then retried.
+            // Instead of doing that we fail here instead, resetUploadData will already have emitted
+            // a ContentReSendError, so we're done.
+        } else if (qobject_cast<QHttpNetworkConnection *>(connection)) {
             QMetaObject::invokeMethod(connection, "_q_startNextRequest", Qt::QueuedConnection);
+        }
         break;
     }
     case 401: // auth required
@@ -970,8 +977,11 @@ void QHttpNetworkConnectionChannel::_q_error(QAbstractSocket::SocketError socket
 
     // emit error for all waiting replies
     do {
-        // Need to dequeu the request so that we can emit the error.
-        if (!reply)
+        // First requeue the already pipelined requests for the current failed reply,
+        // then dequeue pending requests so we can also mark them as finished with error
+        if (reply)
+            requeueCurrentlyPipelinedRequests();
+        else
             connection->d_func()->dequeueRequest(socket);
 
         if (reply) {

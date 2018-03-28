@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 #############################################################################
 ##
@@ -42,6 +42,7 @@ source "${BASH_SOURCE%/*}/try_catch.sh"
 # shellcheck source=DownloadURL.sh
 source "${BASH_SOURCE%/*}/DownloadURL.sh"
 
+ExceptionDownload=99
 ExceptionCreateTmpFile=100
 ExceptionCreateTmpDirectory=101
 ExceptionUncompress=102
@@ -74,8 +75,13 @@ function InstallAppFromCompressedFileFromURL {
         echo "Extension for file: $extension"
         echo "Creating temporary file and directory"
         targetFile=$(mktemp "$TMPDIR$(uuidgen).$extension") || throw $ExceptionCreateTmpFile
-        targetDirectory=$(mktemp -d) || throw $ExceptionCreateTmpDirectory
-        DownloadURL "$url" "$url_alt" "$expectedSha1" "$targetFile"
+        # macOS 10.10 mktemp does require prefix
+        if [[ $OSTYPE == "darwin14" ]]; then
+            targetDirectory=$(mktemp -d -t '10.10') || throw $ExceptionCreateTmpDirectory
+        else
+            targetDirectory=$(mktemp -d) || throw $ExceptionCreateTmpDirectory
+        fi
+        (DownloadURL "$url" "$url_alt" "$expectedSha1" "$targetFile") || throw $ExceptionDownload
         echo "Uncompress $targetFile"
         case $extension in
             "tar.gz")
@@ -98,6 +104,9 @@ function InstallAppFromCompressedFileFromURL {
 
     catch || {
         case $ex_code in
+            $ExceptionDownload)
+                exit 1;
+            ;;
             $ExceptionCreateTmpFile)
                 echo "Failed to create temporary file"
                 exit 1;

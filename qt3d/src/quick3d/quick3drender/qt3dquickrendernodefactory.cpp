@@ -38,7 +38,6 @@
 ****************************************************************************/
 
 #include <Qt3DQuickRender/private/qt3dquickrendernodefactory_p.h>
-#include <QtQml/private/qqmlmetatype_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -68,7 +67,7 @@ Qt3DCore::QNode *QuickRenderNodeFactory::createNode(const char *type)
         typeInfo.t = QQmlMetaType::qmlType(QString::fromLatin1(typeInfo.quickName), typeInfo.version.first, typeInfo.version.second);
     }
 
-    return typeInfo.t ? qobject_cast<Qt3DCore::QNode *>(typeInfo.t->create()) : nullptr;
+    return typeInfo.t.isValid() ? qobject_cast<Qt3DCore::QNode *>(typeInfo.t.create()) : nullptr;
 }
 
 } // namespace Qt3DRender

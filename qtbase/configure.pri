@@ -557,7 +557,7 @@ defineTest(qtConfOutput_prepareOptions) {
                 else: \
                     qtConfFatalError("Cannot detect the Android host." \
                                      "Please use -android-ndk-host option to specify one.")
-                qtConfAddNotice("Available Android host does not match host architecture.")
+                qtConfAddNote("Available Android host does not match host architecture.")
             }
         } else {
             !exists($$ndk_tc_pfx/$$ndk_host/*): \
@@ -1041,7 +1041,7 @@ defineTest(qtConfOutput_gccSysroot) {
 defineTest(qtConfOutput_qmakeArgs) {
     !$${2}: return()
 
-    $${currentConfig}.output.privatePro = "!host_build|!cross_compile {"
+    $${currentConfig}.output.privatePro += "!host_build|!cross_compile {"
     for (a, config.input.qmakeArgs) {
         $${currentConfig}.output.privatePro += "    $$a"
         EXTRA_QMAKE_ARGS += $$system_quote($$a)

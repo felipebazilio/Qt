@@ -178,6 +178,7 @@ static TRUSTEE_W currentUserTrusteeW;
 static TRUSTEE_W worldTrusteeW;
 static PSID currentUserSID = 0;
 static PSID worldSID = 0;
+static HANDLE currentUserImpersonatedToken = nullptr;
 
 /*
     Deletes the allocated SIDs during global static cleanup
@@ -197,6 +198,11 @@ SidCleanup::~SidCleanup()
     if (worldSID) {
         ::FreeSid(worldSID);
         worldSID = 0;
+    }
+
+    if (currentUserImpersonatedToken) {
+        ::CloseHandle(currentUserImpersonatedToken);
+        currentUserImpersonatedToken = nullptr;
     }
 }
 
@@ -251,6 +257,12 @@ static void resolveLibs()
                     }
                     free(tokenBuffer);
                 }
+                ::CloseHandle(token);
+            }
+
+            token = nullptr;
+            if (::OpenProcessToken(hnd, TOKEN_IMPERSONATE | TOKEN_QUERY | TOKEN_DUPLICATE | STANDARD_RIGHTS_READ, &token)) {
+                ::DuplicateToken(token, SecurityImpersonation, &currentUserImpersonatedToken);
                 ::CloseHandle(token);
             }
 
@@ -473,12 +485,17 @@ QFileSystemEntry QFileSystemEngine::getLinkTarget(const QFileSystemEntry &link,
    if (data.missingFlags(QFileSystemMetaData::LinkType))
        QFileSystemEngine::fillMetaData(link, data, QFileSystemMetaData::LinkType);
 
-    QString ret;
+    QString target;
     if (data.isLnkFile())
-        ret = readLink(link);
+        target = readLink(link);
     else if (data.isLink())
-        ret = readSymLink(link);
-    return QFileSystemEntry(ret);
+        target = readSymLink(link);
+    QFileSystemEntry ret(target);
+    if (!target.isEmpty() && ret.isRelative()) {
+        target.prepend(absoluteName(link).path() + QLatin1Char('/'));
+        ret = QFileSystemEntry(QDir::cleanPath(target));
+    }
+    return ret;
 }
 
 //static
@@ -571,19 +588,21 @@ typedef struct _FILE_ID_INFO {
 // File ID for Windows up to version 7.
 static inline QByteArray fileId(HANDLE handle)
 {
-    QByteArray result;
 #ifndef Q_OS_WINRT
     BY_HANDLE_FILE_INFORMATION info;
     if (GetFileInformationByHandle(handle, &info)) {
-        result = QByteArray::number(uint(info.nFileIndexLow), 16);
-        result += ':';
-        result += QByteArray::number(uint(info.nFileIndexHigh), 16);
+        char buffer[sizeof "01234567:0123456701234567"];
+        qsnprintf(buffer, sizeof(buffer), "%lx:%08lx%08lx",
+                  info.dwVolumeSerialNumber,
+                  info.nFileIndexHigh,
+                  info.nFileIndexLow);
+        return buffer;
     }
 #else // !Q_OS_WINRT
     Q_UNUSED(handle);
     Q_UNIMPLEMENTED();
 #endif // Q_OS_WINRT
-    return result;
+    return QByteArray();
 }
 
 // File ID for Windows starting from version 8.
@@ -610,20 +629,36 @@ QByteArray fileIdWin8(HANDLE handle)
 QByteArray QFileSystemEngine::id(const QFileSystemEntry &entry)
 {
     QByteArray result;
-    const HANDLE handle =
+
 #ifndef Q_OS_WINRT
-        CreateFile((wchar_t*)entry.nativeFilePath().utf16(), GENERIC_READ,
-                   FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    const HANDLE handle =
+        CreateFile((wchar_t*)entry.nativeFilePath().utf16(), 0,
+                   FILE_SHARE_READ, NULL, OPEN_EXISTING,
+                   FILE_FLAG_BACKUP_SEMANTICS, NULL);
 #else // !Q_OS_WINRT
-        CreateFile2((const wchar_t*)entry.nativeFilePath().utf16(), GENERIC_READ,
-                    FILE_SHARE_READ, OPEN_EXISTING, NULL);
+    CREATEFILE2_EXTENDED_PARAMETERS params;
+    params.dwSize = sizeof(params);
+    params.dwFileAttributes = FILE_ATTRIBUTE_NORMAL;
+    params.dwFileFlags = FILE_FLAG_BACKUP_SEMANTICS;
+    params.dwSecurityQosFlags = SECURITY_ANONYMOUS;
+    params.lpSecurityAttributes = NULL;
+    params.hTemplateFile = NULL;
+    const HANDLE handle =
+        CreateFile2((const wchar_t*)entry.nativeFilePath().utf16(), 0,
+                    FILE_SHARE_READ, OPEN_EXISTING, &params);
 #endif // Q_OS_WINRT
-    if (handle) {
-        result = QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows8 ?
-                 fileIdWin8(handle) : fileId(handle);
+    if (handle != INVALID_HANDLE_VALUE) {
+        result = id(handle);
         CloseHandle(handle);
     }
     return result;
+}
+
+//static
+QByteArray QFileSystemEngine::id(HANDLE fHandle)
+{
+    return QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows8 ?
+                fileIdWin8(HANDLE(fHandle)) : fileId(HANDLE(fHandle));
 }
 
 //static
@@ -698,15 +733,49 @@ bool QFileSystemEngine::fillPermissions(const QFileSystemEntry &entry, QFileSyst
                 ACCESS_MASK access_mask;
                 TRUSTEE_W trustee;
                 if (what & QFileSystemMetaData::UserPermissions) { // user
-                    data.knownFlagsMask |= QFileSystemMetaData::UserPermissions;
-                    if(ptrGetEffectiveRightsFromAclW(pDacl, &currentUserTrusteeW, &access_mask) != ERROR_SUCCESS)
-                        access_mask = (ACCESS_MASK)-1;
-                    if(access_mask & ReadMask)
-                        data.entryFlags |= QFileSystemMetaData::UserReadPermission;
-                    if(access_mask & WriteMask)
-                        data.entryFlags|= QFileSystemMetaData::UserWritePermission;
-                    if(access_mask & ExecMask)
-                        data.entryFlags|= QFileSystemMetaData::UserExecutePermission;
+                    // Using AccessCheck because GetEffectiveRightsFromAcl doesn't account for elevation
+                    if (currentUserImpersonatedToken) {
+                        GENERIC_MAPPING mapping = {FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_GENERIC_EXECUTE, FILE_ALL_ACCESS};
+                        PRIVILEGE_SET privileges;
+                        DWORD grantedAccess;
+                        BOOL result;
+
+                        data.knownFlagsMask |= QFileSystemMetaData::UserPermissions;
+                        DWORD genericAccessRights = GENERIC_READ;
+                        ::MapGenericMask(&genericAccessRights, &mapping);
+
+                        DWORD privilegesLength = sizeof(privileges);
+                        if (::AccessCheck(pSD, currentUserImpersonatedToken, genericAccessRights,
+                                          &mapping, &privileges, &privilegesLength, &grantedAccess, &result) && result) {
+                            data.entryFlags |= QFileSystemMetaData::UserReadPermission;
+                        }
+
+                        privilegesLength = sizeof(privileges);
+                        genericAccessRights = GENERIC_WRITE;
+                        ::MapGenericMask(&genericAccessRights, &mapping);
+                        if (::AccessCheck(pSD, currentUserImpersonatedToken, genericAccessRights,
+                                          &mapping, &privileges, &privilegesLength, &grantedAccess, &result) && result) {
+                            data.entryFlags |= QFileSystemMetaData::UserWritePermission;
+                        }
+
+                        privilegesLength = sizeof(privileges);
+                        genericAccessRights = GENERIC_EXECUTE;
+                        ::MapGenericMask(&genericAccessRights, &mapping);
+                        if (::AccessCheck(pSD, currentUserImpersonatedToken, genericAccessRights,
+                                          &mapping, &privileges, &privilegesLength, &grantedAccess, &result) && result) {
+                            data.entryFlags |= QFileSystemMetaData::UserExecutePermission;
+                        }
+                    } else { // fallback to GetEffectiveRightsFromAcl
+                        data.knownFlagsMask |= QFileSystemMetaData::UserPermissions;
+                        if (ptrGetEffectiveRightsFromAclW(pDacl, &currentUserTrusteeW, &access_mask) != ERROR_SUCCESS)
+                            access_mask = ACCESS_MASK(-1);
+                        if (access_mask & ReadMask)
+                            data.entryFlags |= QFileSystemMetaData::UserReadPermission;
+                        if (access_mask & WriteMask)
+                            data.entryFlags|= QFileSystemMetaData::UserWritePermission;
+                        if (access_mask & ExecMask)
+                            data.entryFlags|= QFileSystemMetaData::UserExecutePermission;
+                    }
                 }
                 if (what & QFileSystemMetaData::OwnerPermissions) { // owner
                     data.knownFlagsMask |= QFileSystemMetaData::OwnerPermissions;

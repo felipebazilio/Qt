@@ -52,6 +52,8 @@
 
 QT_BEGIN_NAMESPACE
 
+Q_DECLARE_LOGGING_CATEGORY(lcTransient)
+
 class QQuickWindowQmlImplPrivate : public QQuickWindowPrivate
 {
 public:
@@ -203,7 +205,5 @@ void QQuickWindowModule::defineModule()
 }
 
 QT_END_NAMESPACE
-
-QML_DECLARE_TYPEINFO(QQuickWindowQmlImpl, QML_HAS_ATTACHED_PROPERTIES)
 
 #include "moc_qquickwindowmodule_p.cpp"

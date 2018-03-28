@@ -66,6 +66,8 @@
 
 #include <private/qfilesystemengine_p.h>
 
+QT_REQUIRE_CONFIG(filesystemmodel);
+
 QT_BEGIN_NAMESPACE
 
 class QExtendedInformation {
@@ -82,7 +84,8 @@ public:
     bool operator ==(const QExtendedInformation &fileInfo) const {
        return mFileInfo == fileInfo.mFileInfo
        && displayType == fileInfo.displayType
-       && permissions() == fileInfo.permissions();
+       && permissions() == fileInfo.permissions()
+       && lastModified() == fileInfo.lastModified();
     }
 
 #ifndef QT_NO_FSFILEENGINE
@@ -150,8 +153,6 @@ private :
 
 class QFileIconProvider;
 
-#ifndef QT_NO_FILESYSTEMMODEL
-
 class Q_AUTOTEST_EXPORT QFileInfoGatherer : public QThread
 {
 Q_OBJECT
@@ -208,9 +209,6 @@ private:
     QFileIconProvider *m_iconProvider; // not accessed by run()
     QFileIconProvider defaultProvider;
 };
-#endif // QT_NO_FILESYSTEMMODEL
-
 
 QT_END_NAMESPACE
 #endif // QFILEINFOGATHERER_H
-

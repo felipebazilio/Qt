@@ -36,9 +36,11 @@
 
 #include "qquickshortcutcontext_p_p.h"
 #include "qquickoverlay_p_p.h"
+#include "qquicktooltip_p.h"
 #include "qquickpopup_p.h"
 
 #include <QtGui/qguiapplication.h>
+#include <QtQuick/qquickrendercontrol.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -50,6 +52,8 @@ static bool isBlockedByPopup(QQuickItem *item)
     QQuickOverlay *overlay = QQuickOverlay::overlay(item->window());
     const auto popups = QQuickOverlayPrivate::get(overlay)->stackingOrderPopups();
     for (QQuickPopup *popup : popups) {
+        if (qobject_cast<QQuickToolTip *>(popup))
+            continue; // ignore tooltips (QTBUG-60492)
         if (popup->isModal() || popup->closePolicy() & QQuickPopup::CloseOnEscape)
             return item != popup->popupItem() && !popup->popupItem()->isAncestorOf(item);
     }
@@ -74,6 +78,8 @@ bool QQuickShortcutContext::matcher(QObject *obj, Qt::ShortcutContext context)
                 item = popup->popupItem();
             }
         }
+        if (QWindow *renderWindow = QQuickRenderControl::renderWindowFor(qobject_cast<QQuickWindow *>(obj)))
+            obj = renderWindow;
         return obj && obj == QGuiApplication::focusWindow() && !isBlockedByPopup(item);
     default:
         return false;

@@ -317,14 +317,14 @@ void PickBoundingVolumeJob::dispatchPickEvents(const QMouseEvent &event,
 
         for (const QCollisionQueryResult::Hit &hit : qAsConst(sphereHits)) {
             Entity *entity = m_manager->renderNodesManager()->lookupResource(hit.m_entityId);
-            HObjectPicker objectPickerHandle = entity->componentHandle<ObjectPicker, 16>();
+            HObjectPicker objectPickerHandle = entity->componentHandle<ObjectPicker>();
 
             // If the Entity which actually received the hit doesn't have
             // an object picker component, we need to check the parent if it has one ...
             while (objectPickerHandle.isNull() && entity != nullptr) {
                 entity = entity->parent();
                 if (entity != nullptr)
-                    objectPickerHandle = entity->componentHandle<ObjectPicker, 16>();
+                    objectPickerHandle = entity->componentHandle<ObjectPicker>();
             }
 
             ObjectPicker *objectPicker = m_manager->objectPickerManager()->data(objectPickerHandle);
@@ -344,13 +344,13 @@ void PickBoundingVolumeJob::dispatchPickEvents(const QMouseEvent &event,
 
                 QPickEventPtr pickEvent;
                 if (trianglePickingRequested) {
-                    pickEvent.reset(new QPickTriangleEvent(event.localPos(), hit.m_intersection, localIntersection, hit.m_distance,
+                    pickEvent = QSharedPointer<QPickTriangleEvent>::create(event.localPos(), hit.m_intersection, localIntersection, hit.m_distance,
                                                            hit.m_triangleIndex, hit.m_vertexIndex[0], hit.m_vertexIndex[1], hit.m_vertexIndex[2],
-                            eventButton, eventButtons, eventModifiers, hit.m_uvw));
+                            eventButton, eventButtons, eventModifiers, hit.m_uvw);
                     QPickEventPrivate::get(pickEvent.data())->m_entity = hit.m_entityId;
                 } else {
-                    pickEvent.reset(new QPickEvent(event.localPos(), hit.m_intersection, localIntersection, hit.m_distance,
-                                                   eventButton, eventButtons, eventModifiers));
+                    pickEvent = QSharedPointer<QPickEvent>::create(event.localPos(), hit.m_intersection, localIntersection, hit.m_distance,
+                                                   eventButton, eventButtons, eventModifiers);
                 }
                 switch (event.type()) {
                 case QEvent::MouseButtonPress: {

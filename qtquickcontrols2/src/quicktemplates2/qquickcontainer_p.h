@@ -86,6 +86,7 @@ public:
 
 public Q_SLOTS:
     void setCurrentIndex(int index);
+    // 2.1 (Qt 5.8)
     Q_REVISION(1) void incrementCurrentIndex();
     Q_REVISION(1) void decrementCurrentIndex();
 
@@ -97,6 +98,8 @@ Q_SIGNALS:
 
 protected:
     QQuickContainer(QQuickContainerPrivate &dd, QQuickItem *parent);
+
+    void componentComplete() override;
 
     void itemChange(ItemChange change, const ItemChangeData &data) override;
     void contentItemChange(QQuickItem *newItem, QQuickItem *oldItem) override;

@@ -1,12 +1,22 @@
 /****************************************************************************
 **
 ** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the examples of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
 **
 ** "Redistribution and use in source and binary forms, with or without
 ** modification, are permitted provided that the following conditions are
@@ -42,14 +52,16 @@
 #define BROWSERWINDOW_H
 
 #include <QMainWindow>
+#include <QTime>
 #include <QWebEnginePage>
 
 QT_BEGIN_NAMESPACE
+class QLineEdit;
 class QProgressBar;
 QT_END_NAMESPACE
 
+class Browser;
 class TabWidget;
-class UrlLineEdit;
 class WebView;
 
 class BrowserWindow : public QMainWindow
@@ -57,28 +69,23 @@ class BrowserWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    BrowserWindow(QWidget *parent = nullptr, Qt::WindowFlags flags = 0);
-    ~BrowserWindow();
+    BrowserWindow(Browser *browser, QWebEngineProfile *profile);
     QSize sizeHint() const override;
     TabWidget *tabWidget() const;
     WebView *currentTab() const;
-
-    void loadPage(const QString &url);
-    void loadPage(const QUrl &url);
-    void loadHomePage();
+    Browser *browser() { return m_browser; }
 
 protected:
     void closeEvent(QCloseEvent *event) override;
 
 private slots:
     void handleNewWindowTriggered();
+    void handleNewIncognitoWindowTriggered();
     void handleFileOpenTriggered();
     void handleFindActionTriggered();
     void handleShowWindowTriggered();
     void handleWebViewLoadProgress(int);
     void handleWebViewTitleChanged(const QString &title);
-    void handleWebViewUrlChanged(const QUrl &url);
-    void handleWebViewIconChanged(const QIcon &icon);
     void handleWebActionEnabledChanged(QWebEnginePage::WebAction action, bool enabled);
 
 private:
@@ -90,6 +97,8 @@ private:
     QToolBar *createToolBar();
 
 private:
+    Browser *m_browser;
+    QWebEngineProfile *m_profile;
     TabWidget *m_tabWidget;
     QProgressBar *m_progressBar;
     QAction *m_historyBackAction;
@@ -97,7 +106,8 @@ private:
     QAction *m_stopAction;
     QAction *m_reloadAction;
     QAction *m_stopReloadAction;
-    UrlLineEdit *m_urlLineEdit;
+    QLineEdit *m_urlLineEdit;
+    QAction *m_favAction;
     QString m_lastSearch;
 };
 

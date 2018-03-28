@@ -80,7 +80,7 @@ T.ComboBox {
 
         enabled: control.editable
         autoScroll: control.editable
-        readOnly: control.popup.visible
+        readOnly: control.down
         inputMethodHints: control.inputMethodHints
         validator: control.validator
 
@@ -88,7 +88,6 @@ T.ComboBox {
         color: !control.editable && control.visualFocus ? Default.focusColor : Default.textColor
         selectionColor: Default.focusColor
         selectedTextColor: Default.textLightColor
-        horizontalAlignment: Text.AlignLeft
         verticalAlignment: Text.AlignVCenter
         opacity: control.enabled ? 1 : 0.3
 
@@ -104,7 +103,7 @@ T.ComboBox {
         implicitHeight: 40
 
         color: !control.editable && control.visualFocus ? (control.pressed ? Default.focusPressedColor : Default.focusLightColor) :
-            (control.down || popup.visible ? Default.buttonPressedColor : Default.buttonColor)
+            (control.down ? Default.buttonPressedColor : Default.buttonColor)
         border.color: Default.focusColor
         border.width: !control.editable && control.visualFocus ? 2 : 0
         visible: !control.flat || control.down
@@ -120,7 +119,7 @@ T.ComboBox {
         contentItem: ListView {
             clip: true
             implicitHeight: contentHeight
-            model: control.popup.visible ? control.delegateModel : null
+            model: control.delegateModel
             currentIndex: control.highlightedIndex
             highlightRangeMode: ListView.ApplyRange
             highlightMoveDuration: 0

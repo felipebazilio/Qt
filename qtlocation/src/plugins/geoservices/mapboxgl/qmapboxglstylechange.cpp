@@ -54,7 +54,7 @@ QString formatPropertyName(QString *name)
 
 bool isImmutableProperty(const QString &name)
 {
-    return name == QStringLiteral("type") || name == QStringLiteral("layer") || name == QStringLiteral("class");
+    return name == QStringLiteral("type") || name == QStringLiteral("layer");
 }
 
 QString getId(QDeclarativeGeoMapItemBase *mapItem)
@@ -86,6 +86,32 @@ QMapbox::Feature featureFromMapRectangle(QDeclarativeRectangleMapItem *mapItem)
     return QMapbox::Feature(QMapbox::Feature::PolygonType, geometry, {}, getId(mapItem));
 }
 
+QMapbox::Feature featureFromMapCircle(QDeclarativeCircleMapItem *mapItem)
+{
+    static const int circleSamples = 128;
+
+    QList<QGeoCoordinate> path;
+    QGeoCoordinate leftBound;
+    QDeclarativeCircleMapItem::calculatePeripheralPoints(path, mapItem->center(), mapItem->radius(), circleSamples, leftBound);
+    QList<QDoubleVector2D> pathProjected;
+    for (const QGeoCoordinate &c : qAsConst(path))
+        pathProjected << mapItem->map()->geoProjection().geoToMapProjection(c);
+    if (QDeclarativeCircleMapItem::crossEarthPole(mapItem->center(), mapItem->radius()))
+        mapItem->preserveCircleGeometry(pathProjected, mapItem->center(), mapItem->radius());
+    path.clear();
+    for (const QDoubleVector2D &c : qAsConst(pathProjected))
+        path << mapItem->map()->geoProjection().mapProjectionToGeo(c);
+
+
+    QMapbox::Coordinates coordinates;
+    for (const QGeoCoordinate &coordinate : path) {
+        coordinates << QMapbox::Coordinate { coordinate.latitude(), coordinate.longitude() };
+    }
+    coordinates.append(coordinates.first());  // closing the path
+    QMapbox::CoordinatesCollections geometry { { coordinates } };
+    return QMapbox::Feature(QMapbox::Feature::PolygonType, geometry, {}, getId(mapItem));
+}
+
 QMapbox::Feature featureFromMapPolygon(QDeclarativePolygonMapItem *mapItem)
 {
     const QGeoPath *path = static_cast<const QGeoPath *>(&mapItem->geoShape());
@@ -98,7 +124,10 @@ QMapbox::Feature featureFromMapPolygon(QDeclarativePolygonMapItem *mapItem)
             coordinates << QMapbox::Coordinate { coordinate.latitude(), coordinate.longitude() };
         }
     }
-    coordinates.append(coordinates.first());
+
+    if (!coordinates.empty())
+        coordinates.append(coordinates.first()); // closing the path
+
     QMapbox::CoordinatesCollections geometry { { coordinates } };
 
     return QMapbox::Feature(QMapbox::Feature::PolygonType, geometry, {}, getId(mapItem));
@@ -126,6 +155,8 @@ QMapbox::Feature featureFromMapItem(QDeclarativeGeoMapItemBase *item)
     switch (item->itemType()) {
     case QGeoMap::MapRectangle:
         return featureFromMapRectangle(static_cast<QDeclarativeRectangleMapItem *>(item));
+    case QGeoMap::MapCircle:
+        return featureFromMapCircle(static_cast<QDeclarativeCircleMapItem *>(item));
     case QGeoMap::MapPolygon:
         return featureFromMapPolygon(static_cast<QDeclarativePolygonMapItem *>(item));
     case QGeoMap::MapPolyline:
@@ -182,6 +213,7 @@ QList<QSharedPointer<QMapboxGLStyleChange>> QMapboxGLStyleChange::addMapItem(QDe
 
     switch (item->itemType()) {
     case QGeoMap::MapRectangle:
+    case QGeoMap::MapCircle:
     case QGeoMap::MapPolygon:
     case QGeoMap::MapPolyline:
         break;
@@ -250,13 +282,20 @@ QList<QSharedPointer<QMapboxGLStyleChange>> QMapboxGLStyleSetLayoutProperty::fro
 
 QList<QSharedPointer<QMapboxGLStyleChange>> QMapboxGLStyleSetLayoutProperty::fromMapItem(QDeclarativeGeoMapItemBase *item)
 {
+    QList<QSharedPointer<QMapboxGLStyleChange>> changes;
+
     switch (item->itemType()) {
     case QGeoMap::MapPolyline:
-        return fromMapItem(static_cast<QDeclarativePolylineMapItem *>(item));
+        changes = fromMapItem(static_cast<QDeclarativePolylineMapItem *>(item));
     default:
-        qWarning() << "Unsupported QGeoMap item type: " << item->itemType();
-        return QList<QSharedPointer<QMapboxGLStyleChange>>();
+        break;
     }
+
+    changes << QSharedPointer<QMapboxGLStyleChange>(
+        new QMapboxGLStyleSetLayoutProperty(getId(item), QStringLiteral("visibility"),
+            item->isVisible() ? QStringLiteral("visible") : QStringLiteral("none")));
+
+    return changes;
 }
 
 QList<QSharedPointer<QMapboxGLStyleChange>> QMapboxGLStyleSetLayoutProperty::fromMapItem(QDeclarativePolylineMapItem *item)
@@ -288,7 +327,7 @@ QMapboxGLStyleSetPaintProperty::QMapboxGLStyleSetPaintProperty(const QString& la
 
 void QMapboxGLStyleSetPaintProperty::apply(QMapboxGL *map)
 {
-    map->setPaintProperty(m_layer, m_property, m_value, m_class);
+    map->setPaintProperty(m_layer, m_property, m_value);
 }
 
 QList<QSharedPointer<QMapboxGLStyleChange>> QMapboxGLStyleSetPaintProperty::fromMapParameter(QGeoMapParameter *param)
@@ -313,7 +352,6 @@ QList<QSharedPointer<QMapboxGLStyleChange>> QMapboxGLStyleSetPaintProperty::from
 
         paint->m_layer = param->property("layer").toString();
         paint->m_property = formatPropertyName(&name);
-        paint->m_class = param->property("class").toString();
 
         changes << QSharedPointer<QMapboxGLStyleChange>(paint);
     }
@@ -326,6 +364,8 @@ QList<QSharedPointer<QMapboxGLStyleChange>> QMapboxGLStyleSetPaintProperty::from
     switch (item->itemType()) {
     case QGeoMap::MapRectangle:
         return fromMapItem(static_cast<QDeclarativeRectangleMapItem *>(item));
+    case QGeoMap::MapCircle:
+        return fromMapItem(static_cast<QDeclarativeCircleMapItem *>(item));
     case QGeoMap::MapPolygon:
         return fromMapItem(static_cast<QDeclarativePolygonMapItem *>(item));
     case QGeoMap::MapPolyline:
@@ -344,7 +384,24 @@ QList<QSharedPointer<QMapboxGLStyleChange>> QMapboxGLStyleSetPaintProperty::from
     const QString id = getId(item);
 
     changes << QSharedPointer<QMapboxGLStyleChange>(
-        new QMapboxGLStyleSetPaintProperty(id, QStringLiteral("fill-opacity"), item->mapItemOpacity()));
+        new QMapboxGLStyleSetPaintProperty(id, QStringLiteral("fill-opacity"), item->color().alphaF() * item->mapItemOpacity()));
+    changes << QSharedPointer<QMapboxGLStyleChange>(
+        new QMapboxGLStyleSetPaintProperty(id, QStringLiteral("fill-color"), item->color()));
+    changes << QSharedPointer<QMapboxGLStyleChange>(
+        new QMapboxGLStyleSetPaintProperty(id, QStringLiteral("fill-outline-color"), item->border()->color()));
+
+    return changes;
+}
+
+QList<QSharedPointer<QMapboxGLStyleChange>> QMapboxGLStyleSetPaintProperty::fromMapItem(QDeclarativeCircleMapItem *item)
+{
+    QList<QSharedPointer<QMapboxGLStyleChange>> changes;
+    changes.reserve(3);
+
+    const QString id = getId(item);
+
+    changes << QSharedPointer<QMapboxGLStyleChange>(
+        new QMapboxGLStyleSetPaintProperty(id, QStringLiteral("fill-opacity"), item->color().alphaF() * item->mapItemOpacity()));
     changes << QSharedPointer<QMapboxGLStyleChange>(
         new QMapboxGLStyleSetPaintProperty(id, QStringLiteral("fill-color"), item->color()));
     changes << QSharedPointer<QMapboxGLStyleChange>(
@@ -361,7 +418,7 @@ QList<QSharedPointer<QMapboxGLStyleChange>> QMapboxGLStyleSetPaintProperty::from
     const QString id = getId(item);
 
     changes << QSharedPointer<QMapboxGLStyleChange>(
-        new QMapboxGLStyleSetPaintProperty(id, QStringLiteral("fill-opacity"), item->mapItemOpacity()));
+        new QMapboxGLStyleSetPaintProperty(id, QStringLiteral("fill-opacity"), item->color().alphaF() * item->mapItemOpacity()));
     changes << QSharedPointer<QMapboxGLStyleChange>(
         new QMapboxGLStyleSetPaintProperty(id, QStringLiteral("fill-color"), item->color()));
     changes << QSharedPointer<QMapboxGLStyleChange>(
@@ -378,7 +435,7 @@ QList<QSharedPointer<QMapboxGLStyleChange>> QMapboxGLStyleSetPaintProperty::from
     const QString id = getId(item);
 
     changes << QSharedPointer<QMapboxGLStyleChange>(
-        new QMapboxGLStyleSetPaintProperty(id, QStringLiteral("line-opacity"), item->mapItemOpacity()));
+        new QMapboxGLStyleSetPaintProperty(id, QStringLiteral("line-opacity"), item->line()->color().alphaF() * item->mapItemOpacity()));
     changes << QSharedPointer<QMapboxGLStyleChange>(
         new QMapboxGLStyleSetPaintProperty(id, QStringLiteral("line-color"), item->line()->color()));
     changes << QSharedPointer<QMapboxGLStyleChange>(
@@ -399,15 +456,30 @@ QSharedPointer<QMapboxGLStyleChange> QMapboxGLStyleAddLayer::fromMapParameter(QG
     Q_ASSERT(param->type() == "layer");
 
     auto layer = new QMapboxGLStyleAddLayer();
-    layer->m_params[QStringLiteral("id")] = param->property("name");
-    layer->m_params[QStringLiteral("source")] = param->property("source");
-    layer->m_params[QStringLiteral("type")] = param->property("layerType");
 
-    if (param->property("sourceLayer").isValid()) {
-        layer->m_params[QStringLiteral("source-layer")] = param->property("sourceLayer");
+    static const QStringList layerProperties = QStringList()
+        << QStringLiteral("name") << QStringLiteral("layerType") << QStringLiteral("before");
+
+    // Offset objectName and type properties.
+    for (int i = 2; i < param->metaObject()->propertyCount(); ++i) {
+        QString name = param->metaObject()->property(i).name();
+        QVariant value = param->property(name.toLatin1());
+
+        switch (layerProperties.indexOf(name)) {
+        case -1:
+            layer->m_params[formatPropertyName(&name)] = value;
+            break;
+        case 0: // name
+            layer->m_params[QStringLiteral("id")] = value;
+            break;
+        case 1: // layerType
+            layer->m_params[QStringLiteral("type")] = value;
+            break;
+        case 2: // before
+            layer->m_before = value.toString();
+            break;
+        }
     }
-
-    layer->m_before = param->property("before").toString();
 
     return QSharedPointer<QMapboxGLStyleChange>(layer);
 }

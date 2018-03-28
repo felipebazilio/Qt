@@ -38,6 +38,7 @@
 #include "qquicktextfield_p_p.h"
 #include "qquickcontrol_p.h"
 #include "qquickcontrol_p_p.h"
+#include "qquickdeferredexecute_p_p.h"
 
 #include <QtQuick/private/qquickitem_p.h>
 #include <QtQuick/private/qquicktextinput_p.h>
@@ -265,6 +266,26 @@ QAccessible::Role QQuickTextFieldPrivate::accessibleRole() const
 }
 #endif
 
+static inline QString backgroundName() { return QStringLiteral("background"); }
+
+void QQuickTextFieldPrivate::cancelBackground()
+{
+    Q_Q(QQuickTextField);
+    quickCancelDeferred(q, backgroundName());
+}
+
+void QQuickTextFieldPrivate::executeBackground(bool complete)
+{
+    Q_Q(QQuickTextField);
+    if (background.wasExecuted())
+        return;
+
+    if (!background || complete)
+        quickBeginDeferred(q, backgroundName(), background);
+    if (complete)
+        quickCompleteDeferred(q, backgroundName(), background);
+}
+
 QQuickTextField::QQuickTextField(QQuickItem *parent)
     : QQuickTextInput(*(new QQuickTextFieldPrivate), parent)
 {
@@ -306,7 +327,9 @@ void QQuickTextField::setFont(const QFont &font)
 */
 QQuickItem *QQuickTextField::background() const
 {
-    Q_D(const QQuickTextField);
+    QQuickTextFieldPrivate *d = const_cast<QQuickTextFieldPrivate *>(d_func());
+    if (!d->background)
+        d->executeBackground();
     return d->background;
 }
 
@@ -316,7 +339,10 @@ void QQuickTextField::setBackground(QQuickItem *background)
     if (d->background == background)
         return;
 
-    QQuickControlPrivate::destroyDelegate(d->background, this);
+    if (!d->background.isExecuting())
+        d->cancelBackground();
+
+    delete d->background;
     d->background = background;
     if (background) {
         background->setParentItem(this);
@@ -325,7 +351,8 @@ void QQuickTextField::setBackground(QQuickItem *background)
         if (isComponentComplete())
             d->resizeBackground();
     }
-    emit backgroundChanged();
+    if (!d->background.isExecuting())
+        emit backgroundChanged();
 }
 
 /*!
@@ -461,6 +488,7 @@ void QQuickTextField::classBegin()
 void QQuickTextField::componentComplete()
 {
     Q_D(QQuickTextField);
+    d->executeBackground(true);
     QQuickTextInput::componentComplete();
 #if QT_CONFIG(quicktemplates2_hover)
     if (!d->explicitHoverEnabled)
@@ -476,7 +504,7 @@ void QQuickTextField::itemChange(QQuickItem::ItemChange change, const QQuickItem
 {
     Q_D(QQuickTextField);
     QQuickTextInput::itemChange(change, value);
-    if (change == ItemParentHasChanged && value.item) {
+    if ((change == ItemParentHasChanged && value.item) || (change == ItemSceneChange && value.window)) {
         d->resolveFont();
 #if QT_CONFIG(quicktemplates2_hover)
         if (!d->explicitHoverEnabled)
@@ -547,7 +575,8 @@ void QQuickTextField::mousePressEvent(QMouseEvent *event)
             QQuickTextInput::mousePressEvent(d->pressHandler.delayedMousePressEvent);
             d->pressHandler.clearDelayedMouseEvent();
         }
-        QQuickTextInput::mousePressEvent(event);
+        if (event->buttons() != Qt::RightButton)
+            QQuickTextInput::mousePressEvent(event);
     }
 }
 
@@ -560,7 +589,8 @@ void QQuickTextField::mouseMoveEvent(QMouseEvent *event)
             QQuickTextInput::mousePressEvent(d->pressHandler.delayedMousePressEvent);
             d->pressHandler.clearDelayedMouseEvent();
         }
-        QQuickTextInput::mouseMoveEvent(event);
+        if (event->buttons() != Qt::RightButton)
+            QQuickTextInput::mouseMoveEvent(event);
     }
 }
 
@@ -573,7 +603,8 @@ void QQuickTextField::mouseReleaseEvent(QMouseEvent *event)
             QQuickTextInput::mousePressEvent(d->pressHandler.delayedMousePressEvent);
             d->pressHandler.clearDelayedMouseEvent();
         }
-        QQuickTextInput::mouseReleaseEvent(event);
+        if (event->buttons() != Qt::RightButton)
+            QQuickTextInput::mouseReleaseEvent(event);
     }
 }
 
@@ -584,7 +615,8 @@ void QQuickTextField::mouseDoubleClickEvent(QMouseEvent *event)
         QQuickTextInput::mousePressEvent(d->pressHandler.delayedMousePressEvent);
         d->pressHandler.clearDelayedMouseEvent();
     }
-    QQuickTextInput::mouseDoubleClickEvent(event);
+    if (event->buttons() != Qt::RightButton)
+        QQuickTextInput::mouseDoubleClickEvent(event);
 }
 
 void QQuickTextField::timerEvent(QTimerEvent *event)

@@ -85,6 +85,9 @@ public:
 
     void toggle(bool value);
 
+    void cancelIndicator();
+    void executeIndicator(bool complete = false);
+
     QString text;
     bool down;
     bool explicitDown;
@@ -100,7 +103,7 @@ public:
     int repeatTimer;
     QPointF pressPoint;
     Qt::MouseButtons pressButtons;
-    QQuickItem *indicator;
+    QQuickDeferredPointer<QQuickItem> indicator;
     QQuickButtonGroup *group;
 };
 

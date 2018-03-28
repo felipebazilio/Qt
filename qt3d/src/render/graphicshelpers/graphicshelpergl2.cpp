@@ -178,6 +178,10 @@ QVector<ShaderUniform> GraphicsHelperGL2::programUniformsAndLocations(GLuint pro
         uniformName[sizeof(uniformName) - 1] = '\0';
         uniform.m_location = m_funcs->glGetUniformLocation(programId, uniformName);
         uniform.m_name = QString::fromUtf8(uniformName, uniformNameLength);
+        // Work around for uniform array names that aren't returned with [0] by some drivers
+        if (uniform.m_size > 1 && !uniform.m_name.endsWith(QLatin1String("[0]")))
+            uniform.m_name.append(QLatin1String("[0]"));
+        uniform.m_rawByteSize = uniformByteSize(uniform);
         uniforms.append(uniform);
     }
     return uniforms;
@@ -374,12 +378,24 @@ void GraphicsHelperGL2::bindFragDataLocation(GLuint, const QHash<QString, int> &
     qCritical() << "bindFragDataLocation is not supported by GL 2.0";
 }
 
-void GraphicsHelperGL2::bindFrameBufferObject(GLuint frameBufferId)
+void GraphicsHelperGL2::bindFrameBufferObject(GLuint frameBufferId, FBOBindMode mode)
 {
-    if (m_fboFuncs != nullptr)
-        m_fboFuncs->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, frameBufferId);
-    else
+    if (m_fboFuncs != nullptr) {
+        switch (mode) {
+        case FBODraw:
+            m_fboFuncs->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, frameBufferId);
+            return;
+        case FBORead:
+            m_fboFuncs->glBindFramebuffer(GL_READ_FRAMEBUFFER, frameBufferId);
+            return;
+        case FBOReadAndDraw:
+        default:
+            m_fboFuncs->glBindFramebuffer(GL_FRAMEBUFFER, frameBufferId);
+            return;
+        }
+    } else {
         qWarning() << "FBO not supported by your OpenGL hardware";
+    }
 }
 
 GLuint GraphicsHelperGL2::boundFrameBufferObject()
@@ -448,12 +464,36 @@ uint GraphicsHelperGL2::uniformByteSize(const ShaderUniform &description)
         rawByteSize = matrixStride ? 2 * matrixStride : 16;
         break;
 
+    case GL_FLOAT_MAT2x4:
+        rawByteSize = matrixStride ? 2 * matrixStride : 32;
+        break;
+
+    case GL_FLOAT_MAT4x2:
+        rawByteSize = matrixStride ? 4 * matrixStride : 32;
+        break;
+
     case GL_FLOAT_MAT3:
         rawByteSize = matrixStride ? 3 * matrixStride : 36;
         break;
 
+    case GL_FLOAT_MAT2x3:
+        rawByteSize = matrixStride ? 2 * matrixStride : 24;
+        break;
+
+    case GL_FLOAT_MAT3x2:
+        rawByteSize = matrixStride ? 3 * matrixStride : 24;
+        break;
+
     case GL_FLOAT_MAT4:
         rawByteSize = matrixStride ? 4 * matrixStride : 64;
+        break;
+
+    case GL_FLOAT_MAT4x3:
+        rawByteSize = matrixStride ? 4 * matrixStride : 48;
+        break;
+
+    case GL_FLOAT_MAT3x4:
+        rawByteSize = matrixStride ? 3 * matrixStride : 48;
         break;
 
     case GL_BOOL:

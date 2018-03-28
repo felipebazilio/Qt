@@ -209,10 +209,10 @@ void QText2DEntityPrivate::setCurrentGlyphRuns(const QVector<QGlyphRun> &runs)
                 texCoords.setWidth(texCoords.width() * insideRatio);
             }
 
-            data.vertex << x1 << y1 << 0.f << texCoords.left() << texCoords.bottom();
-            data.vertex << x1 << y2 << 0.f << texCoords.left() << texCoords.top();
-            data.vertex << x2 << y1 << 0.f << texCoords.right() << texCoords.bottom();
-            data.vertex << x2 << y2 << 0.f << texCoords.right() << texCoords.top();
+            data.vertex << x1 << y1 << i << texCoords.left() << texCoords.bottom();
+            data.vertex << x1 << y2 << i << texCoords.left() << texCoords.top();
+            data.vertex << x2 << y1 << i << texCoords.right() << texCoords.bottom();
+            data.vertex << x2 << y2 << i << texCoords.right() << texCoords.top();
 
             data.index << data.vertexCount << data.vertexCount+3 << data.vertexCount+1;
             data.index << data.vertexCount << data.vertexCount+2 << data.vertexCount+3;
@@ -284,6 +284,10 @@ void QText2DEntityPrivate::update()
     setCurrentGlyphRuns(glyphRuns);
 }
 
+/*!
+    Returns the font for the text item that is displayed
+    in the Qt Quick scene.
+*/
 QFont QText2DEntity::font() const
 {
     Q_D(const QText2DEntity);
@@ -308,6 +312,10 @@ void QText2DEntity::setFont(const QFont &font)
     }
 }
 
+/*!
+    Returns the color for the text item that is displayed in the Qt
+    Quick scene.
+*/
 QColor QText2DEntity::color() const
 {
     Q_D(const QText2DEntity);
@@ -327,6 +335,9 @@ void QText2DEntity::setColor(const QColor &color)
     }
 }
 
+/*!
+    Returns the text that is displayed in the Qt Quick scene.
+*/
 QString QText2DEntity::text() const
 {
     Q_D(const QText2DEntity);
@@ -344,12 +355,20 @@ void QText2DEntity::setText(const QString &text)
     }
 }
 
+/*!
+    Returns the width of the text item that is displayed in the
+    Qt Quick scene.
+*/
 float QText2DEntity::width() const
 {
     Q_D(const QText2DEntity);
     return d->m_width;
 }
 
+/*!
+    Returns the width of the text item that is displayed in the
+    Qt Quick scene.
+*/
 float QText2DEntity::height() const
 {
     Q_D(const QText2DEntity);

@@ -402,7 +402,6 @@ void DirectShowPlayerService::doSetUrlSource(QMutexLocker *locker)
     } else if (!m_resources.isEmpty()) {
         m_pendingTasks |= SetUrlSource;
     } else {
-        m_pendingTasks = 0;
         m_graphStatus = InvalidMedia;
 
         switch (hr) {
@@ -674,6 +673,9 @@ void DirectShowPlayerService::doReleaseGraph(QMutexLocker *locker)
     m_loop->wake();
 }
 
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_GCC("-Wmissing-field-initializers")
+
 void DirectShowPlayerService::doSetVideoProbe(QMutexLocker *locker)
 {
     Q_UNUSED(locker);
@@ -721,9 +723,10 @@ void DirectShowPlayerService::doSetVideoProbe(QMutexLocker *locker)
     for (int i = 0; i != items; ++i) {
         mediaType->subtype = subtypes[i];
         m_videoSampleGrabber->setMediaType(&mediaType);
-        if (SUCCEEDED(DirectShowUtils::connectFilters(m_graph, m_source, m_videoSampleGrabber->filter(), true)))
+        if (SUCCEEDED(DirectShowUtils::connectFilters(m_graph, m_source, m_videoSampleGrabber->filter(), true))) {
             connected = true;
             break;
+        }
     }
 
     if (!connected) {
@@ -764,6 +767,8 @@ void DirectShowPlayerService::doSetAudioProbe(QMutexLocker *locker)
 
     m_audioSampleGrabber->start(DirectShowSampleGrabber::CallbackMethod::BufferCB);
 }
+
+QT_WARNING_POP
 
 void DirectShowPlayerService::doReleaseVideoProbe(QMutexLocker *locker)
 {
@@ -1444,7 +1449,10 @@ void DirectShowPlayerService::videoOutputChanged()
     setVideoOutput(m_videoRendererControl->filter());
 }
 
-void DirectShowPlayerService::onAudioBufferAvailable(double time, quint8 *buffer, long len)
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_GCC("-Wmissing-field-initializers")
+
+void DirectShowPlayerService::onAudioBufferAvailable(double time, const QByteArray &data)
 {
     QMutexLocker locker(&m_mutex);
     if (!m_audioProbeControl || !m_audioSampleGrabber)
@@ -1488,18 +1496,16 @@ void DirectShowPlayerService::onAudioBufferAvailable(double time, quint8 *buffer
         format.setSampleType(QAudioFormat::SignedInt);
 
     const quint64 startTime = quint64(time * 1000.);
-    QAudioBuffer audioBuffer(QByteArray(reinterpret_cast<const char *>(buffer), len),
+    QAudioBuffer audioBuffer(data,
                              format,
                              startTime);
 
     Q_EMIT m_audioProbeControl->audioBufferProbed(audioBuffer);
 }
 
-void DirectShowPlayerService::onVideoBufferAvailable(double time, quint8 *buffer, long len)
+void DirectShowPlayerService::onVideoBufferAvailable(double time, const QByteArray &data)
 {
     Q_UNUSED(time);
-    Q_UNUSED(buffer);
-    Q_UNUSED(len);
 
     QMutexLocker locker(&m_mutex);
     if (!m_videoProbeControl || !m_videoSampleGrabber)
@@ -1527,13 +1533,14 @@ void DirectShowPlayerService::onVideoBufferAvailable(double time, quint8 *buffer
     const QSize &size = videoFormat.frameSize();
 
     const int bytesPerLine = DirectShowMediaType::bytesPerLine(videoFormat);
-    QByteArray data(reinterpret_cast<const char *>(buffer), len);
     QVideoFrame frame(new QMemoryVideoBuffer(data, bytesPerLine),
                       size,
                       format);
 
     Q_EMIT m_videoProbeControl->videoFrameProbed(frame);
 }
+
+QT_WARNING_POP
 
 void DirectShowPlayerService::graphEvent(QMutexLocker *locker)
 {
@@ -1680,8 +1687,6 @@ void DirectShowPlayerService::run()
     QMutexLocker locker(&m_mutex);
 
     for (;;) {
-        ::ResetEvent(m_taskHandle);
-
         while (m_pendingTasks == 0) {
             DWORD result = 0;
 

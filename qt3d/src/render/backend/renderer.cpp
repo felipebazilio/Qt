@@ -157,7 +157,7 @@ Renderer::Renderer(QRenderAspect::RenderType type)
     , m_graphicsContext(nullptr)
     , m_renderQueue(new RenderQueue())
     , m_renderThread(type == QRenderAspect::Threaded ? new RenderThread(this) : nullptr)
-    , m_vsyncFrameAdvanceService(new VSyncFrameAdvanceService())
+    , m_vsyncFrameAdvanceService(new VSyncFrameAdvanceService(m_renderThread != nullptr))
     , m_waitForInitializationToBeCompleted(0)
     , m_pickEventFilter(new PickEventFilter())
     , m_exposed(0)
@@ -1298,8 +1298,10 @@ Renderer::ViewSubmissionResultData Renderer::submitRenderViews(const QVector<Ren
         // of gc->currentContext() at the moment it was called (either
         // renderViewStateSet or m_defaultRenderStateSet)
         if (!renderView->renderCaptureNodeId().isNull()) {
-            QSize size = m_graphicsContext->renderTargetSize(renderView->surfaceSize() * renderView->devicePixelRatio());
-            QImage image = m_graphicsContext->readFramebuffer(size);
+            const QSize size = m_graphicsContext->renderTargetSize(renderView->surfaceSize() * renderView->devicePixelRatio());
+            // Bind fbo as read framebuffer
+            m_graphicsContext->bindFramebuffer(m_graphicsContext->activeFBO(), GraphicsHelperInterface::FBORead);
+            const QImage image = m_graphicsContext->readFramebuffer(size);
             Render::RenderCapture *renderCapture =
                     static_cast<Render::RenderCapture*>(m_nodesManager->frameGraphManager()->lookupNode(renderView->renderCaptureNodeId()));
             renderCapture->addRenderCapture(image);
@@ -1318,7 +1320,7 @@ Renderer::ViewSubmissionResultData Renderer::submitRenderViews(const QVector<Ren
     // lastBoundFBOId != m_graphicsContext->activeFBO() when the last FrameGraph leaf node/renderView
     // contains RenderTargetSelector/RenderTarget
     if (lastBoundFBOId != m_graphicsContext->activeFBO())
-        m_graphicsContext->bindFramebuffer(lastBoundFBOId);
+        m_graphicsContext->bindFramebuffer(lastBoundFBOId, GraphicsHelperInterface::FBOReadAndDraw);
 
     // Reset state and call doneCurrent if the surface
     // is valid and was actually activated
@@ -1434,6 +1436,14 @@ QVector<Qt3DCore::QAspectJobPtr> Renderer::renderBinJobs()
         // Camera selected by the framegraph configuration
         FrameGraphVisitor visitor(m_nodesManager->frameGraphManager());
         const QVector<FrameGraphNode *> fgLeaves = visitor.traverse(frameGraphRoot());
+
+        // Remove leaf nodes that no longer exist from cache
+        const auto keys = m_cache.leafNodeCache.keys();
+        for (auto *leafNode : keys) {
+            if (!fgLeaves.contains(leafNode)) {
+                m_cache.leafNodeCache.remove(leafNode);
+            }
+        }
 
         const int fgBranchCount = fgLeaves.size();
         for (int i = 0; i < fgBranchCount; ++i) {
@@ -1648,7 +1658,8 @@ bool Renderer::executeCommandsSubmission(const RenderView *rv)
             {
                 Profiling::GLTimeRecorder recorder(Profiling::UniformUpdate);
                 //// Update program uniforms
-                m_graphicsContext->setParameters(command->m_parameterPack);
+                if (!m_graphicsContext->setParameters(command->m_parameterPack))
+                    allCommandsIssued = false;
             }
 
             //// OpenGL State

@@ -1621,6 +1621,7 @@ void QWindowsFontDatabase::refUniqueFont(const QString &uniqueFont)
         m_uniqueFontData[uniqueFont].refCount.ref();
 }
 
+// ### fixme Qt 6 (QTBUG-58610): See comment at QWindowsFontDatabase::systemDefaultFont()
 HFONT QWindowsFontDatabase::systemFont()
 {
     static const HFONT stock_sysfont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
@@ -1961,12 +1962,25 @@ QFontEngine *QWindowsFontDatabase::createEngine(const QFontDef &request, const Q
 
 QFont QWindowsFontDatabase::systemDefaultFont()
 {
+#if QT_VERSION >= 0x060000
+    // Qt 6: Obtain default GUI font (typically "Segoe UI, 9pt", see QTBUG-58610)
+    NONCLIENTMETRICS ncm;
+    ncm.cbSize = FIELD_OFFSET(NONCLIENTMETRICS, lfMessageFont) + sizeof(LOGFONT);
+    SystemParametersInfo(SPI_GETNONCLIENTMETRICS, ncm.cbSize , &ncm, 0);
+    const QFont systemFont = QWindowsFontDatabase::LOGFONT_to_QFont(ncm.lfMessageFont);
+#else
     LOGFONT lf;
     GetObject(QWindowsFontDatabase::systemFont(), sizeof(lf), &lf);
     QFont systemFont =  QWindowsFontDatabase::LOGFONT_to_QFont(lf);
     // "MS Shell Dlg 2" is the correct system font >= Win2k
     if (systemFont.family() == QLatin1String("MS Shell Dlg"))
         systemFont.setFamily(QStringLiteral("MS Shell Dlg 2"));
+    // Qt 5 by (Qt 4) legacy uses GetStockObject(DEFAULT_GUI_FONT) to
+    // obtain the default GUI font (typically "MS Shell Dlg 2, 8pt"). This has been
+    // long deprecated; the message font of the NONCLIENTMETRICS structure obtained by
+    // SystemParametersInfo(SPI_GETNONCLIENTMETRICS) should be used instead (see
+    // QWindowsTheme::refreshFonts(), typically "Segoe UI, 9pt"), which is larger.
+#endif // Qt 5
     qCDebug(lcQpaFonts) << __FUNCTION__ << systemFont;
     return systemFont;
 }

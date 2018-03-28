@@ -62,6 +62,8 @@ class WorkerThread;
 #endif
 
 #ifdef QT_WINRT_BLUETOOTH
+#include <QtCore/QMutex>
+
 #include <wrl.h>
 
 namespace ABI {
@@ -77,8 +79,6 @@ namespace ABI {
         }
     }
 }
-
-class SocketWorker;
 #endif // QT_WINRT_BLUETOOTH
 
 #ifndef QPRIVATELINEARBUFFER_BUFFERSIZE
@@ -91,6 +91,10 @@ class SocketWorker;
 QT_FORWARD_DECLARE_CLASS(QSocketNotifier)
 
 QT_BEGIN_NAMESPACE
+
+#ifdef QT_WINRT_BLUETOOTH
+class SocketWorker;
+#endif
 
 class QBluetoothServiceDiscoveryAgent;
 
@@ -166,6 +170,8 @@ public:
                              QBluetoothSocket::OpenMode openMode = QBluetoothSocket::ReadWrite);
 
     qint64 bytesAvailable() const;
+    bool canReadLine() const;
+    qint64 bytesToWrite() const;
 
 public:
     QPrivateLinearBuffer buffer;

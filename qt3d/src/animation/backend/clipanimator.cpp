@@ -75,6 +75,11 @@ void ClipAnimator::setClipId(Qt3DCore::QNodeId clipId)
 {
     m_clipId = clipId;
     setDirty(Handler::ClipAnimatorDirty);
+
+    // register at the clip to make sure we are marked dirty when the clip finished loading
+    AnimationClip *clip = m_handler->animationClipLoaderManager()->lookupResource(clipId);
+    if (clip)
+        clip->addDependingClipAnimator(peerId());
 }
 
 void ClipAnimator::setMapperId(Qt3DCore::QNodeId mapperId)
@@ -99,6 +104,7 @@ void ClipAnimator::cleanup()
     m_mapperId = Qt3DCore::QNodeId();
     m_running = false;
     m_loops = 1;
+    m_formatIndices.clear();
 }
 
 void ClipAnimator::sceneChangeEvent(const Qt3DCore::QSceneChangePtr &e)

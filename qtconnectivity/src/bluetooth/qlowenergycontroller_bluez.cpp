@@ -346,8 +346,8 @@ void QLowEnergyControllerPrivate::handleGattRequestTimeout()
     }
 
     if (!openRequests.isEmpty() && requestPending) {
-        requestPending = false; // reset pending flag
         const Request currentRequest = openRequests.dequeue();
+        requestPending = false; // reset pending flag
 
         qCWarning(QT_BT_BLUEZ).nospace() << "****** Request type 0x" << hex << currentRequest.command
                            << " to server/peripheral timed out";
@@ -372,7 +372,6 @@ void QLowEnergyControllerPrivate::handleGattRequestTimeout()
         case ATT_OP_EXCHANGE_MTU_REQUEST:  // MTU change request
             // never received reply to MTU request
             // it is safe to skip and go to next request
-            sendNextPendingRequest();
             break;
         case ATT_OP_READ_BY_GROUP_REQUEST: // primary or secondary service discovery
         case ATT_OP_READ_BY_TYPE_REQUEST:  // characteristic or included service discovery
@@ -406,8 +405,13 @@ void QLowEnergyControllerPrivate::handleGattRequestTimeout()
             break;
         default:
             // not a command used by central role implementation
-            return;
+            qCWarning(QT_BT_BLUEZ) << "Missing response for ATT peripheral command: "
+                                   << hex << command;
+            break;
         }
+
+        // spin openRequest queue further
+        sendNextPendingRequest();
     }
 }
 
@@ -527,8 +531,12 @@ void QLowEnergyControllerPrivate::connectToDevice()
     }
 
     setState(QLowEnergyController::ConnectingState);
-    if (l2cpSocket)
+    if (l2cpSocket) {
         delete l2cpSocket;
+        l2cpSocket = nullptr;
+    }
+
+    createServicesForCentralIfRequired();
 
     // check for active running connections
     // BlueZ 5.37+ (maybe even earlier versions) can have pending BTLE connections
@@ -579,6 +587,7 @@ void QLowEnergyControllerPrivate::activeConnectionTerminationDone()
         qCWarning(QT_BT_BLUEZ) << "Cannot close pending external BTLE connections. Aborting connect attempt";
         setError(QLowEnergyController::ConnectionError);
         setState(QLowEnergyController::UnconnectedState);
+        l2cpDisconnected();
         return;
     } else {
         establishL2cpClientSocket();
@@ -644,6 +653,72 @@ void QLowEnergyControllerPrivate::establishL2cpClientSocket()
     loadSigningDataIfNecessary(LocalSigningKey);
 }
 
+void QLowEnergyControllerPrivate::createServicesForCentralIfRequired()
+{
+    //only enable when requested
+    //for now we use env variable to activate the feature
+    if (Q_LIKELY(!qEnvironmentVariableIsSet("QT_DEFAULT_CENTRAL_SERVICES")))
+        return; //nothing to do
+
+    //do not add the services each time we start a connection
+    if (localServices.contains(QBluetoothUuid(QBluetoothUuid::GenericAccess)))
+        return;
+
+    qCDebug(QT_BT_BLUEZ) << "Creating default GAP/GATT services";
+
+    //populate Generic Access service
+    //for now the values are static
+    QLowEnergyServiceData gapServiceData;
+    gapServiceData.setType(QLowEnergyServiceData::ServiceTypePrimary);
+    gapServiceData.setUuid(QBluetoothUuid::GenericAccess);
+
+    QLowEnergyCharacteristicData gapDeviceName;
+    gapDeviceName.setUuid(QBluetoothUuid::DeviceName);
+    gapDeviceName.setProperties(QLowEnergyCharacteristic::Read);
+
+    QBluetoothLocalDevice mainAdapter;
+    gapDeviceName.setValue(mainAdapter.name().toLatin1()); //static name
+
+    QLowEnergyCharacteristicData gapAppearance;
+    gapAppearance.setUuid(QBluetoothUuid::Appearance);
+    gapAppearance.setProperties(QLowEnergyCharacteristic::Read);
+    gapAppearance.setValue(QByteArray::fromHex("80")); // Generic Computer (0x80)
+
+    QLowEnergyCharacteristicData gapPrivacyFlag;
+    gapPrivacyFlag.setUuid(QBluetoothUuid::PeripheralPrivacyFlag);
+    gapPrivacyFlag.setProperties(QLowEnergyCharacteristic::Read);
+    gapPrivacyFlag.setValue(QByteArray::fromHex("00")); // disable privacy
+
+    gapServiceData.addCharacteristic(gapDeviceName);
+    gapServiceData.addCharacteristic(gapAppearance);
+    gapServiceData.addCharacteristic(gapPrivacyFlag);
+
+    Q_Q(QLowEnergyController);
+    QLowEnergyService *service = addServiceHelper(gapServiceData);
+    if (service)
+        service->setParent(q);
+
+    QLowEnergyServiceData gattServiceData;
+    gattServiceData.setType(QLowEnergyServiceData::ServiceTypePrimary);
+    gattServiceData.setUuid(QBluetoothUuid::GenericAttribute);
+
+    QLowEnergyCharacteristicData serviceChangedChar;
+    serviceChangedChar.setUuid(QBluetoothUuid::ServiceChanged);
+    serviceChangedChar.setProperties(QLowEnergyCharacteristic::Indicate);
+    //arbitrary range of 2 bit handle range (1-4
+    serviceChangedChar.setValue(QByteArray::fromHex("0104"));
+
+    const QLowEnergyDescriptorData clientConfig(
+                        QBluetoothUuid::ClientCharacteristicConfiguration,
+                        QByteArray(2, 0));
+    serviceChangedChar.addDescriptor(clientConfig);
+    gattServiceData.addCharacteristic(serviceChangedChar);
+
+    service = addServiceHelper(gattServiceData);
+    if (service)
+        service->setParent(q);
+}
+
 void QLowEnergyControllerPrivate::l2cpConnected()
 {
     Q_Q(QLowEnergyController);
@@ -658,8 +733,16 @@ void QLowEnergyControllerPrivate::l2cpConnected()
 void QLowEnergyControllerPrivate::disconnectFromDevice()
 {
     setState(QLowEnergyController::ClosingState);
-    l2cpSocket->close();
+    if (l2cpSocket)
+        l2cpSocket->close();
     resetController();
+
+    // this may happen when RemoteDeviceManager::JobType::JobDisconnectDevice
+    // is pending.
+    if (!l2cpSocket) {
+        qWarning(QT_BT_BLUEZ) << "Unexpected closure of device. Cleaning up internal states.";
+        l2cpDisconnected();
+    }
 }
 
 void QLowEnergyControllerPrivate::l2cpDisconnected()

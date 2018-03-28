@@ -1,3 +1,1 @@
-
-# Disable the windows search indexing service
-sc.exe config WSearch start= disabled
+. "$PSScriptRoot\..\common\wsearch-off.ps1"

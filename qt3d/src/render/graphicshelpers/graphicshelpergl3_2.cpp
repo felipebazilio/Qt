@@ -207,6 +207,9 @@ QVector<ShaderUniform> GraphicsHelperGL3_2::programUniformsAndLocations(GLuint p
         uniformName[sizeof(uniformName) - 1] = '\0';
         uniform.m_location = m_funcs->glGetUniformLocation(programId, uniformName);
         uniform.m_name = QString::fromUtf8(uniformName, uniformNameLength);
+        // Work around for uniform array names that aren't returned with [0] by some drivers
+        if (uniform.m_size > 1 && !uniform.m_name.endsWith(QLatin1String("[0]")))
+            uniform.m_name.append(QLatin1String("[0]"));
         m_funcs->glGetActiveUniformsiv(programId, 1, (GLuint*)&i, GL_UNIFORM_BLOCK_INDEX, &uniform.m_blockIndex);
         m_funcs->glGetActiveUniformsiv(programId, 1, (GLuint*)&i, GL_UNIFORM_OFFSET, &uniform.m_offset);
         m_funcs->glGetActiveUniformsiv(programId, 1, (GLuint*)&i, GL_UNIFORM_ARRAY_STRIDE, &uniform.m_arrayStride);
@@ -350,9 +353,20 @@ void GraphicsHelperGL3_2::releaseFrameBufferObject(GLuint frameBufferId)
     m_funcs->glDeleteFramebuffers(1, &frameBufferId);
 }
 
-void GraphicsHelperGL3_2::bindFrameBufferObject(GLuint frameBufferId)
+void GraphicsHelperGL3_2::bindFrameBufferObject(GLuint frameBufferId, FBOBindMode mode)
 {
-    m_funcs->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, frameBufferId);
+    switch (mode) {
+    case FBODraw:
+        m_funcs->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, frameBufferId);
+        return;
+    case FBORead:
+        m_funcs->glBindFramebuffer(GL_READ_FRAMEBUFFER, frameBufferId);
+        return;
+    case FBOReadAndDraw:
+    default:
+        m_funcs->glBindFramebuffer(GL_FRAMEBUFFER, frameBufferId);
+        return;
+    }
 }
 
 GLuint GraphicsHelperGL3_2::boundFrameBufferObject()

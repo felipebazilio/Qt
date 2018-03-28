@@ -65,10 +65,13 @@ void QSGMapboxGLTextureNode::resize(const QSize &size, qreal pixelRatio)
     m_map->resize(minSize, fbSize);
 
     m_fbo.reset(new QOpenGLFramebufferObject(fbSize, QOpenGLFramebufferObject::CombinedDepthStencil));
+    m_map->setFramebufferObject(m_fbo->handle());
 
     QSGPlainTexture *fboTexture = static_cast<QSGPlainTexture *>(texture());
-    if (!fboTexture)
+    if (!fboTexture) {
         fboTexture = new QSGPlainTexture;
+        fboTexture->setHasAlphaChannel(true);
+    }
 
     fboTexture->setTextureId(m_fbo->texture());
     fboTexture->setTextureSize(fbSize);
@@ -87,9 +90,20 @@ void QSGMapboxGLTextureNode::render(QQuickWindow *window)
     QOpenGLFunctions *f = window->openglContext()->functions();
     f->glViewport(0, 0, m_fbo->width(), m_fbo->height());
 
+    GLint alignment;
+    f->glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
+
     m_fbo->bind();
+
+    f->glClearColor(0.f, 0.f, 0.f, 0.f);
+    f->glColorMask(true, true, true, true);
+    f->glClear(GL_COLOR_BUFFER_BIT);
+
     m_map->render();
     m_fbo->release();
+
+    // QTBUG-62861
+    f->glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
 
     window->resetOpenGLState();
     markDirty(QSGNode::DirtyMaterial);
@@ -124,7 +138,13 @@ void QSGMapboxGLRenderNode::render(const RenderState *state)
     f->glScissor(state->scissorRect().x(), state->scissorRect().y(), state->scissorRect().width(), state->scissorRect().height());
     f->glEnable(GL_SCISSOR_TEST);
 
+    GLint alignment;
+    f->glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
+
     m_map->render();
+
+    // QTBUG-62861
+    f->glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
 }
 
 QSGRenderNode::StateFlags QSGMapboxGLRenderNode::changedStates() const
