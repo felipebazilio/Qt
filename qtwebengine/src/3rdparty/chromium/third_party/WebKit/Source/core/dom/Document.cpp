@@ -2553,6 +2553,7 @@ void Document::open(Document* enteredDocument, ExceptionState& exceptionState) {
     }
     setSecurityOrigin(enteredDocument->getSecurityOrigin());
     setURL(enteredDocument->url());
+    setReferrerPolicy(enteredDocument->getReferrerPolicy());
     m_cookieURL = enteredDocument->cookieURL();
   }
 
@@ -5430,6 +5431,8 @@ void Document::initContentSecurityPolicy(
     const ContentSecurityPolicy* policyToInherit) {
   setContentSecurityPolicy(csp ? csp : ContentSecurityPolicy::create());
 
+  contentSecurityPolicy()->bindToExecutionContext(this);
+
   // We inherit the parent/opener's CSP for documents with "local" schemes:
   // 'about', 'blob', 'data', and 'filesystem'. We also inherit CSP for
   // documents with empty/invalid URLs because we treat those URLs as
@@ -5460,8 +5463,6 @@ void Document::initContentSecurityPolicy(
   // regardless of URL.
   if (policyToInherit && isPluginDocument())
     contentSecurityPolicy()->copyPluginTypesFrom(policyToInherit);
-
-  contentSecurityPolicy()->bindToExecutionContext(this);
 }
 
 bool Document::isSecureTransitionTo(const KURL& url) const {

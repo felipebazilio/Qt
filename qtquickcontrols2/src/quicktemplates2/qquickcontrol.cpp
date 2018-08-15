@@ -52,7 +52,6 @@
 
 #include <QtGui/private/qguiapplication_p.h>
 #include <QtGui/qpa/qplatformtheme.h>
-#include <QtQml/private/qqmlincubator_p.h>
 
 #if QT_CONFIG(accessibility)
 #include <QtQuick/private/qquickaccessibleattached_p.h>
@@ -161,11 +160,19 @@ bool QQuickControlPrivate::acceptTouch(const QTouchEvent::TouchPoint &point)
 }
 #endif
 
+static void setActiveFocus(QQuickControl *control, Qt::FocusReason reason)
+{
+    QQuickControlPrivate *d = QQuickControlPrivate::get(control);
+    if (d->subFocusItem && d->window && d->flags & QQuickItem::ItemIsFocusScope)
+        QQuickWindowPrivate::get(d->window)->clearFocusInScope(control, d->subFocusItem, reason);
+    control->forceActiveFocus(reason);
+}
+
 void QQuickControlPrivate::handlePress(const QPointF &)
 {
     Q_Q(QQuickControl);
     if ((focusPolicy & Qt::ClickFocus) == Qt::ClickFocus && !QGuiApplication::styleHints()->setFocusOnTouchRelease())
-        q->forceActiveFocus(Qt::MouseFocusReason);
+        setActiveFocus(q, Qt::MouseFocusReason);
 }
 
 void QQuickControlPrivate::handleMove(const QPointF &point)
@@ -182,7 +189,7 @@ void QQuickControlPrivate::handleRelease(const QPointF &)
 {
     Q_Q(QQuickControl);
     if ((focusPolicy & Qt::ClickFocus) == Qt::ClickFocus && QGuiApplication::styleHints()->setFocusOnTouchRelease())
-        q->forceActiveFocus(Qt::MouseFocusReason);
+        setActiveFocus(q, Qt::MouseFocusReason);
     touchId = -1;
 }
 
@@ -979,28 +986,6 @@ void QQuickControlPrivate::executeBackground(bool complete)
         quickCompleteDeferred(q, backgroundName(), background);
 }
 
-/*
-    Cancels incubation recursively to avoid "Object destroyed during incubation" (QTBUG-50992)
-*/
-static void cancelIncubation(QObject *object, QQmlContext *context)
-{
-    const auto children = object->children();
-    for (QObject *child : children)
-        cancelIncubation(child, context);
-    QQmlIncubatorPrivate::cancel(object, context);
-}
-
-void QQuickControlPrivate::destroyDelegate(QObject *delegate, QObject *parent)
-{
-    if (!delegate)
-        return;
-
-    QQmlContext *context = parent ? qmlContext(parent) : nullptr;
-    if (context)
-        cancelIncubation(delegate, context);
-    delete delegate;
-}
-
 void QQuickControlPrivate::updateLocale(const QLocale &l, bool e)
 {
     Q_Q(QQuickControl);
@@ -1343,6 +1328,7 @@ void QQuickControl::componentComplete()
     d->executeBackground(true);
     d->executeContentItem(true);
     QQuickItem::componentComplete();
+    d->resizeBackground();
     d->resizeContent();
     if (!d->hasLocale)
         d->locale = QQuickControlPrivate::calcLocale(d->parentItem);
@@ -1473,7 +1459,7 @@ void QQuickControl::wheelEvent(QWheelEvent *event)
 {
     Q_D(QQuickControl);
     if ((d->focusPolicy & Qt::WheelFocus) == Qt::WheelFocus)
-        forceActiveFocus(Qt::MouseFocusReason);
+        setActiveFocus(this, Qt::MouseFocusReason);
 
     event->setAccepted(d->wheelEnabled);
 }

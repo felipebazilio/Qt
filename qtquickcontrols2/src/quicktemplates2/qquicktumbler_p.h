@@ -70,7 +70,6 @@ class Q_QUICKTEMPLATES2_PRIVATE_EXPORT QQuickTumbler : public QQuickControl
     Q_PROPERTY(bool wrap READ wrap WRITE setWrap RESET resetWrap NOTIFY wrapChanged FINAL REVISION 1)
     // 2.2 (Qt 5.9)
     Q_PROPERTY(bool moving READ isMoving NOTIFY movingChanged FINAL REVISION 2)
-    Q_CLASSINFO("DeferredPropertyNames", "background")
 
 public:
     explicit QQuickTumbler(QQuickItem *parent = nullptr);
@@ -128,6 +127,7 @@ private:
     Q_PRIVATE_SLOT(d_func(), void _q_updateItemHeights())
     Q_PRIVATE_SLOT(d_func(), void _q_onViewCurrentIndexChanged())
     Q_PRIVATE_SLOT(d_func(), void _q_onViewCountChanged())
+    Q_PRIVATE_SLOT(d_func(), void _q_calculateAttachedDisplacements())
 };
 
 class QQuickTumblerAttachedPrivate;

@@ -34,7 +34,7 @@
     The Qt Quick Controls module provides a set of controls that can be used to
     build complete interfaces in Qt Quick.
 
-    The module is new in Qt 5.1.
+    The module was introduced in Qt 5.1.
 
     Visit the \l{Qt Quick Controls Overview} page to get started.
 
@@ -53,6 +53,15 @@
     \section1 Menus
     Types that can be used to build menus.
     \annotatedlist menus
+
+    \section1 Licenses and Attributions
+
+    The Qt Quick Controls module is available under commercial licenses from \l{The Qt Company}.
+    In addition, it is available under free software licenses. Since Qt 5.4,
+    these free software licenses are
+    \l{GNU Lesser General Public License, version 3}, or
+    the \l{GNU General Public License, version 2}.
+    See \l{Qt Licensing} for further details.
 
     \section1 Related information
 

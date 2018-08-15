@@ -34,6 +34,12 @@
 #include <qmakeglobals.h>
 #include <qmakeevaluator.h>
 
+#ifdef Q_OS_WIN
+#  define EVAL_DRIVE "R:"
+#else
+#  define EVAL_DRIVE
+#endif
+
 void tst_qmakelib::addAssignments()
 {
     QTest::newRow("assignment")
@@ -1598,21 +1604,35 @@ void tst_qmakelib::addReplaceFunctions(const QString &qindir)
             << ""
             << true;
 
-    QTest::newRow("$$absolute_path(): file & path")
-            << "VAR = $$absolute_path(dir/file.ext, /root/sub)"
-            << "VAR = /root/sub/dir/file.ext"
+    QTest::newRow("$$absolute_path(): relative file & relative path")
+            << "VAR = $$absolute_path(dir/file.ext, some/where)"
+            << "VAR = " + qindir + "/some/where/dir/file.ext"
             << ""
             << true;
 
+    QTest::newRow("$$absolute_path(): file & path")
+            << "VAR = $$absolute_path(dir/file.ext, " EVAL_DRIVE "/root/sub)"
+            << "VAR = " EVAL_DRIVE "/root/sub/dir/file.ext"
+            << ""
+            << true;
+
+#ifdef Q_OS_WIN
+    QTest::newRow("$$absolute_path(): driveless file & absolute path")
+            << "VAR = $$absolute_path(/root/sub/dir/file.ext, " EVAL_DRIVE "/other)"
+            << "VAR = " EVAL_DRIVE "/root/sub/dir/file.ext"
+            << ""
+            << true;
+#endif
+
     QTest::newRow("$$absolute_path(): absolute file & path")
-            << "VAR = $$absolute_path(/root/sub/dir/file.ext, /other)"
-            << "VAR = /root/sub/dir/file.ext"
+            << "VAR = $$absolute_path(" EVAL_DRIVE "/root/sub/dir/file.ext, " EVAL_DRIVE "/other)"
+            << "VAR = " EVAL_DRIVE "/root/sub/dir/file.ext"
             << ""
             << true;
 
     QTest::newRow("$$absolute_path(): empty file & path")
-            << "VAR = $$absolute_path('', /root/sub)"
-            << "VAR = /root/sub"
+            << "VAR = $$absolute_path('', " EVAL_DRIVE "/root/sub)"
+            << "VAR = " EVAL_DRIVE "/root/sub"
             << ""
             << true;
 
@@ -1628,20 +1648,34 @@ void tst_qmakelib::addReplaceFunctions(const QString &qindir)
             << ""
             << true;
 
+    QTest::newRow("$$relative_path(): relative file & relative path")
+            << "VAR = $$relative_path(dir/file.ext, some/where)"
+            << "VAR = dir/file.ext"
+            << ""
+            << true;
+
     QTest::newRow("$$relative_path(): relative file to empty")
             << "VAR = $$relative_path(dir/..)"
             << "VAR = ."
             << ""
             << true;
 
+#ifdef Q_OS_WIN
+    QTest::newRow("$$relative_path(): driveless file & absolute path")
+            << "VAR = $$relative_path(/root/sub/dir/file.ext, " EVAL_DRIVE "/root/sub)"
+            << "VAR = dir/file.ext"
+            << ""
+            << true;
+#endif
+
     QTest::newRow("$$relative_path(): absolute file & path")
-            << "VAR = $$relative_path(/root/sub/dir/file.ext, /root/sub)"
+            << "VAR = $$relative_path(" EVAL_DRIVE "/root/sub/dir/file.ext, " EVAL_DRIVE "/root/sub)"
             << "VAR = dir/file.ext"
             << ""
             << true;
 
     QTest::newRow("$$relative_path(): empty file & path")
-            << "VAR = $$relative_path('', /root/sub)"
+            << "VAR = $$relative_path('', " EVAL_DRIVE "/root/sub)"
             << "VAR = ."
             << ""
             << true;
@@ -2555,20 +2589,20 @@ void tst_qmakelib::addTestFunctions(const QString &qindir)
             << true;
 
     QTest::newRow("touch(): missing target")
-            << "touch(/does/not/exist, files/other.txt): OK = 1"
+            << "touch(" EVAL_DRIVE "/does/not/exist, files/other.txt): OK = 1"
             << "OK = UNDEF"
 #ifdef Q_OS_WIN
-            << "##:1: Cannot open /does/not/exist: The system cannot find the path specified."
+            << "##:1: Cannot open " EVAL_DRIVE "/does/not/exist: The system cannot find the path specified."
 #else
             << "##:1: Cannot touch /does/not/exist: No such file or directory."
 #endif
             << true;
 
     QTest::newRow("touch(): missing reference")
-            << "touch(" + wpath + ", /does/not/exist): OK = 1"
+            << "touch(" + wpath + ", " EVAL_DRIVE "/does/not/exist): OK = 1"
             << "OK = UNDEF"
 #ifdef Q_OS_WIN
-            << "##:1: Cannot open reference file /does/not/exist: The system cannot find the path specified."
+            << "##:1: Cannot open reference file " EVAL_DRIVE "/does/not/exist: The system cannot find the path specified."
 #else
             << "##:1: Cannot stat() reference file /does/not/exist: No such file or directory."
 #endif
@@ -2692,9 +2726,9 @@ void tst_qmakelib::proEval_data()
 
     // Raw data leak with empty file name. Verify with Valgrind or asan.
     QTest::newRow("QTBUG-54550")
-            << "FULL = /there/is\n"
+            << "FULL = " EVAL_DRIVE "/there/is\n"
                "VAR = $$absolute_path(, $$FULL/nothing/here/really)"
-            << "VAR = /there/is/nothing/here/really"
+            << "VAR = " EVAL_DRIVE "/there/is/nothing/here/really"
             << ""
             << true;
 }

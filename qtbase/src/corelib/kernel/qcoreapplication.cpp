@@ -95,7 +95,7 @@
 #endif
 #endif // QT_NO_QOBJECT
 
-#if defined(Q_OS_ANDROID)
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
 #  include <private/qjni_p.h>
 #  include <private/qjnihelpers_p.h>
 #endif
@@ -180,7 +180,7 @@ QString QCoreApplicationPrivate::appVersion() const
 #ifndef QT_BOOTSTRAPPED
 #  ifdef Q_OS_DARWIN
     applicationVersion = infoDictionaryStringProperty(QStringLiteral("CFBundleVersion"));
-#  elif defined(Q_OS_ANDROID)
+#  elif defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_EMBEDDED)
     QJNIObjectPrivate context(QtAndroidPrivate::context());
     if (context.isValid()) {
         QJNIObjectPrivate pm = context.callObjectMethod(
@@ -775,6 +775,14 @@ void QCoreApplicationPrivate::init()
 
     if (!coreappdata()->applicationVersionSet)
         coreappdata()->applicationVersion = appVersion();
+
+#if defined(Q_OS_ANDROID)
+    // We've deferred initializing the logging registry due to not being
+    // able to guarantee that logging happened on the same thread as the
+    // Qt main thread, but now that the Qt main thread is set up, we can
+    // enable categorized logging.
+    QLoggingRegistry::instance()->initializeRules();
+#endif
 
 #if QT_CONFIG(library)
     // Reset the lib paths, so that they will be recomputed, taking the availability of argv[0]
@@ -1426,6 +1434,9 @@ void QCoreApplication::postEvent(QObject *receiver, QEvent *event, int priority)
         return;
     }
 
+    if (event->type() == QEvent::DeferredDelete)
+        receiver->d_ptr->deleteLaterCalled = true;
+
     if (event->type() == QEvent::DeferredDelete && data == QThreadData::current()) {
         // remember the current running eventloop for DeferredDelete
         // events posted in the receiver's thread.
@@ -1485,22 +1496,34 @@ bool QCoreApplication::compressEvent(QEvent *event, QObject *receiver, QPostEven
                 return true;
             }
         }
-    } else
+        return false;
+    }
 #endif
-        if ((event->type() == QEvent::DeferredDelete
-             || event->type() == QEvent::Quit)
-            && receiver->d_func()->postedEvents > 0) {
-            for (int i = 0; i < postedEvents->size(); ++i) {
-                const QPostEvent &cur = postedEvents->at(i);
-                if (cur.receiver != receiver
+
+    if (event->type() == QEvent::DeferredDelete) {
+        if (receiver->d_ptr->deleteLaterCalled) {
+            // there was a previous DeferredDelete event, so we can drop the new one
+            delete event;
+            return true;
+        }
+        // deleteLaterCalled is set to true in postedEvents when queueing the very first
+        // deferred deletion event.
+        return false;
+    }
+
+    if (event->type() == QEvent::Quit && receiver->d_func()->postedEvents > 0) {
+        for (int i = 0; i < postedEvents->size(); ++i) {
+            const QPostEvent &cur = postedEvents->at(i);
+            if (cur.receiver != receiver
                     || cur.event == 0
                     || cur.event->type() != event->type())
-                    continue;
-                // found an event for this receiver
-                delete event;
-                return true;
-            }
+                continue;
+            // found an event for this receiver
+            delete event;
+            return true;
         }
+    }
+
     return false;
 }
 
@@ -2174,7 +2197,7 @@ QString QCoreApplication::applicationFilePath()
     }
 #endif
 #if defined( Q_OS_UNIX )
-#  if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
+#  if defined(Q_OS_LINUX) && (!defined(Q_OS_ANDROID) || defined(Q_OS_ANDROID_EMBEDDED))
     // Try looking for a /proc/<pid>/exe symlink first which points to
     // the absolute path of the executable
     QFileInfo pfi(QString::fromLatin1("/proc/%1/exe").arg(getpid()));
@@ -2834,6 +2857,10 @@ void QCoreApplication::setEventDispatcher(QAbstractEventDispatcher *eventDispatc
 
     If QCoreApplication is deleted and another QCoreApplication is created,
     the startup function will be invoked again.
+
+    \note This macro is not suitable for use in library code that is then
+    statically linked into an application since the function may not be called
+    at all due to being eliminated by the linker.
 */
 
 /*!

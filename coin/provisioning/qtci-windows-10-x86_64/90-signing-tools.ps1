@@ -32,7 +32,7 @@
 ##
 #############################################################################
 
-. "$PSScriptRoot\..\common\helpers.ps1"
+. "$PSScriptRoot\..\common\windows\helpers.ps1"
 
 # Signing tools are needed to sign offline installers when releasing
 
@@ -41,4 +41,4 @@ $destination = "C:\Windows\temp\sign.zip"
 
 Download $url $url $destination
 Extract-Zip "$destination" "C:\Utils"
-Remove-Item "$destination"
+Remove-Item -Path "$destination"

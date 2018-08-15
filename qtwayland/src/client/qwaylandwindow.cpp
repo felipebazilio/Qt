@@ -789,7 +789,7 @@ static QWaylandWindow *closestShellSurfaceWindow(QWindow *window)
 {
     while (window) {
         auto w = static_cast<QWaylandWindow *>(window->handle());
-        if (w->shellSurface())
+        if (w && w->shellSurface())
             return w;
         window = window->transientParent() ? window->transientParent() : window->parent();
     }
@@ -1029,7 +1029,7 @@ QVariant QWaylandWindow::property(const QString &name, const QVariant &defaultVa
 
 void QWaylandWindow::requestUpdate()
 {
-    if (!mFrameCallback)
+    if (!mWaitingForFrameSync)
         QPlatformWindow::requestUpdate();
     else
         mUpdateRequested = true;

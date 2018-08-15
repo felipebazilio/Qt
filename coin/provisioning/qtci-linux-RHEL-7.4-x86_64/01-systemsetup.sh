@@ -36,8 +36,7 @@
 set -ex
 
 BASEDIR=$(dirname "$0")
-source $BASEDIR/../common/network_test_server_ip.txt
-source "${BASH_SOURCE%/*}/../common/check_and_set_proxy.sh"
+source $BASEDIR/../common/shared/network_test_server_ip.txt
 
 echo "Set Network Test Server address to $network_test_server_ip in /etc/hosts"
 echo "$network_test_server_ip    qt-test-server qt-test-server.qt-test-net" | sudo tee -a /etc/hosts
@@ -50,7 +49,3 @@ export DISPLAY=:0
 gsettings set org.gnome.desktop.screensaver lock-enabled false
 # disable blank screen power saving
 gsettings set org.gnome.desktop.session idle-delay 0
-
-if [ "$proxy" != "" ]; then
-    echo "proxy=$proxy" | sudo tee -a /etc/yum.conf
-fi

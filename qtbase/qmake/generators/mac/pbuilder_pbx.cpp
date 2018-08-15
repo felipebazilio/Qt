@@ -279,7 +279,6 @@ ProjectBuilderMakefileGenerator::writeSubDirs(QTextStream &t)
         QString configName = (as_release ? "Release" : "Debug");
 
         QMap<QString, QString> settings;
-        settings.insert("COPY_PHASE_STRIP", (as_release ? "YES" : "NO"));
         if(project->isActiveConfig("sdk") && !project->isEmpty("QMAKE_MAC_SDK"))
             settings.insert("SDKROOT", project->first("QMAKE_MAC_SDK").toQString());
         {
@@ -1493,7 +1492,6 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
                 settings.insert("PROVISIONING_PROFILE_SPECIFIER", project->first("QMAKE_PROVISIONING_PROFILE").toQString());
         }
 
-        settings.insert("COPY_PHASE_STRIP", (as_release ? "YES" : "NO"));
         settings.insert("APPLICATION_EXTENSION_API_ONLY", project->isActiveConfig("app_extension_api_only") ? "YES" : "NO");
         // required for tvOS (and watchos), optional on iOS (deployment target >= iOS 6.0)
         settings.insert("ENABLE_BITCODE", project->isActiveConfig("bitcode") ? "YES" : "NO");
@@ -1604,7 +1602,17 @@ ProjectBuilderMakefileGenerator::writeMakeParts(QTextStream &t)
                     }
                 }
 
-                t << "\t\t\t\t" << writeSettings("SYMROOT", Option::output_dir) << ";\n";
+                // The symroot is marked by xcodebuild as excluded from Time Machine
+                // backups, as it's a temporary build dir, so we don't want it to be
+                // the same as the possibe in-source dir, as that would leave out
+                // sources from being backed up.
+                t << "\t\t\t\t" << writeSettings("SYMROOT",
+                    Option::output_dir + Option::dir_sep + ".xcode") << ";\n";
+
+                // The configuration build dir however is not treated as excluded,
+                // so we can safely point it to the root output dir.
+                t << "\t\t\t\t" << writeSettings("CONFIGURATION_BUILD_DIR",
+                    Option::output_dir + Option::dir_sep + "$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)") << ";\n";
 
                 if (!project->isEmpty("DESTDIR")) {
                     ProString dir = project->first("DESTDIR");

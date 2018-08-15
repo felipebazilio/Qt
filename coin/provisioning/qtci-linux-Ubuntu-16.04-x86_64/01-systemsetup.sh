@@ -35,59 +35,27 @@
 
 # This script modifies system settings for automated use
 
-# shellcheck source=../common/try_catch.sh
-
 set -ex
 
-source "${BASH_SOURCE%/*}/../common/try_catch.sh"
-source "${BASH_SOURCE%/*}/../common/check_and_set_proxy.sh"
+source "${BASH_SOURCE%/*}/../common/unix/check_and_set_proxy.sh"
 
 NTS_IP=10.212.2.216
 
-ExceptionGsettings1=100
-ExceptionGsettings2=101
-ExceptionGsettings3=102
-ExceptionNTS=103
-ExceptionProxy=104
+echo "Set timezone to UTC."
+sudo timedatectl set-timezone Etc/UTC
+echo "Timeout for blanking the screen (0 = never)"
+gsettings set org.gnome.desktop.session idle-delay 0
+echo "Prevents screen lock when screesaver goes active."
+gsettings set org.gnome.desktop.screensaver lock-enabled false
+echo "Disable questions on shutdown."
+gsettings set com.canonical.indicator.session suppress-logout-restart-shutdown true
+echo "Set grub timeout to 0"
+sudo sed -i 's|GRUB_TIMEOUT=10|GRUB_TIMEOUT=0|g' /etc/default/grub
+sudo update-grub
 
-try
-(
-    echo "Timeout for blanking the screen (0 = never)"
-    gsettings set org.gnome.desktop.session idle-delay 0 || throw $ExceptionGsettings1
-    echo "Prevents screen lock when screesaver goes active."
-    gsettings set org.gnome.desktop.screensaver lock-enabled false || throw $ExceptionGsettings2
-    echo "Disable questions on shutdown."
-    gsettings set com.canonical.indicator.session suppress-logout-restart-shutdown true || throw $ExceptionGsettings3
+echo "Set Network Test Server address to $NTS_IP in /etc/hosts"
+echo "$NTS_IP    qt-test-server qt-test-server.qt-test-net" | sudo tee -a /etc/hosts
 
-    echo "Set Network Test Server address to $NTS_IP in /etc/hosts"
-    echo "$NTS_IP    qt-test-server qt-test-server.qt-test-net" | sudo tee -a /etc/hosts || throw $ExceptionNTS
-
-    if [ "$proxy" != "" ]; then
-        echo "Acquire::http::Proxy \"$proxy\";" | sudo tee -a /etc/apt/apt.conf || throw $ExceptionProxy
-    fi
-)
-catch || {
-    case $ex_code in
-        $ExceptionGsettings1)
-            echo "Failed to disable black screen."
-            exit 1;
-        ;;
-        $ExceptionGsettings2)
-            echo "Failed to prevent screen lock."
-            exit 1;
-        ;;
-        $ExceptionGsettings3)
-            echo "Failed to disable questions on shutdown."
-            exit 1;
-        ;;
-        $ExceptionNTS)
-            echo "Failed to set network teset server address into /etc/hosts."
-            exit 1;
-        ;;
-        $ExceptionProxy)
-            echo "Failed to set proxy /etc/apt/apt.conf."
-            exit 1;
-        ;;
-    esac
-}
-
+if [ "$http_proxy" != "" ]; then
+    echo "Acquire::http::Proxy \"$proxy\";" | sudo tee -a /etc/apt/apt.conf
+fi

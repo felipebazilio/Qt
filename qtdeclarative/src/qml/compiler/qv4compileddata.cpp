@@ -84,8 +84,10 @@ static QString cacheFilePath(const QUrl &url)
 {
     const QString localSourcePath = QQmlFile::urlToLocalFileOrQrc(url);
     const QString localCachePath = localSourcePath + QLatin1Char('c');
+#ifndef Q_OS_ANDROID
     if (QFile::exists(localCachePath) || QFileInfo(QFileInfo(localSourcePath).dir().absolutePath()).isWritable())
         return localCachePath;
+#endif
     QCryptographicHash fileNameHash(QCryptographicHash::Sha1);
     fileNameHash.addData(localSourcePath.toUtf8());
     QString directory = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QLatin1String("/qmlcache/");
@@ -747,7 +749,7 @@ static QByteArray ownLibraryChecksum()
     // the cache files may end up being re-used. To avoid that we also add the checksum of
     // the QtQml library.
     Dl_info libInfo;
-    if (dladdr(reinterpret_cast<const void *>(&ownLibraryChecksum), &libInfo) != 0) {
+    if (dladdr(reinterpret_cast<void *>(&ownLibraryChecksum), &libInfo) != 0) {
         QFile library(QFile::decodeName(libInfo.dli_fname));
         if (library.open(QIODevice::ReadOnly)) {
             QCryptographicHash hash(QCryptographicHash::Md5);

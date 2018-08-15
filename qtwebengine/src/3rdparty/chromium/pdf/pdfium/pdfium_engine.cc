@@ -1381,9 +1381,14 @@ bool PDFiumEngine::HandleEvent(const pp::InputEvent& event) {
 
   DCHECK(defer_page_unload_);
   defer_page_unload_ = false;
-  for (int page_index : deferred_page_unloads_)
+  // Store the pages to unload away because the act of unloading pages can cause
+  // there to be more pages to unload. We leave those extra pages to be unloaded
+  // on the next go around.
+  std::vector<int> pages_to_unload;
+  std::swap(pages_to_unload, deferred_page_unloads_);
+  for (int page_index : pages_to_unload)
     pages_[page_index]->Unload();
-  deferred_page_unloads_.clear();
+
   return rv;
 }
 
@@ -3359,7 +3364,10 @@ void PDFiumEngine::DeviceToPage(int page_index,
 }
 
 int PDFiumEngine::GetVisiblePageIndex(FPDF_PAGE page) {
-  for (int page_index : visible_pages_) {
+  // Copy visible_pages_ since it can change as a result of loading the page in
+  // GetPage(). See https://crbug.com/822091.
+  std::vector<int> visible_pages_copy(visible_pages_);
+  for (int page_index : visible_pages_copy) {
     if (pages_[page_index]->GetPage() == page)
       return page_index;
   }

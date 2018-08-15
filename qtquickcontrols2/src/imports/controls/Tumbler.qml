@@ -45,25 +45,23 @@ T.Tumbler {
     implicitHeight: 200
 
     delegate: Text {
-        id: label
         text: modelData
         color: control.visualFocus ? Default.focusColor : Default.textDarkColor
         font: control.font
-        opacity: (1.0 - Math.abs(Tumbler.displacement) / (visibleItemCount / 2)) * (control.enabled ? 1 : 0.6)
+        opacity: (1.0 - Math.abs(Tumbler.displacement) / (control.visibleItemCount / 2)) * (control.enabled ? 1 : 0.6)
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
     }
 
     contentItem: TumblerView {
-        id: tumblerView
         model: control.model
         delegate: control.delegate
         path: Path {
-            startX: tumblerView.width / 2
-            startY: -tumblerView.delegateHeight / 2
+            startX: contentItem.width / 2
+            startY: -contentItem.delegateHeight / 2
             PathLine {
-                x: tumblerView.width / 2
-                y: (control.visibleItemCount + 1) * tumblerView.delegateHeight - tumblerView.delegateHeight / 2
+                x: contentItem.width / 2
+                y: (control.visibleItemCount + 1) * contentItem.delegateHeight - contentItem.delegateHeight / 2
             }
         }
 

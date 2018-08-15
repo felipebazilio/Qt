@@ -209,19 +209,32 @@ QVariant QQmlEngineDebugServiceImpl::valueContents(QVariant value) const
     }
 
     if (QQmlValueTypeFactory::isValueType(userType)) {
+        switch (userType) {
+        case QMetaType::QRect:
+        case QMetaType::QRectF:
+        case QMetaType::QPoint:
+        case QMetaType::QPointF:
+        case QMetaType::QSize:
+        case QMetaType::QSizeF:
+        case QMetaType::QFont:
+            // Don't call the toString() method on those. The stream operators are better.
+            return value;
+        default:
+            break;
+        }
+
         const QMetaObject *mo = QQmlValueTypeFactory::metaObjectForMetaType(userType);
         if (mo) {
-            int toStringIndex = mo->indexOfMethod("toString");
+            int toStringIndex = mo->indexOfMethod("toString()");
             if (toStringIndex != -1) {
                 QMetaMethod mm = mo->method(toStringIndex);
-                QMetaType info(userType);
                 QString s;
-                if (info.flags() & QMetaType::IsGadget
-                        && mm.invokeOnGadget(value.data(), Q_RETURN_ARG(QString, s)))
+                if (mm.invokeOnGadget(value.data(), Q_RETURN_ARG(QString, s)))
                     return s;
             }
         }
 
+        // We expect all QML value types to either have a toString() method or stream operators
         return value;
     }
 
@@ -799,7 +812,8 @@ void QQmlEngineDebugServiceImpl::engineAboutToBeRemoved(QJSEngine *engine)
 void QQmlEngineDebugServiceImpl::objectCreated(QJSEngine *engine, QObject *object)
 {
     Q_ASSERT(engine);
-    Q_ASSERT(m_engines.contains(engine));
+    if (!m_engines.contains(engine))
+        return;
 
     int engineId = QQmlDebugService::idForObject(engine);
     int objectId = QQmlDebugService::idForObject(object);

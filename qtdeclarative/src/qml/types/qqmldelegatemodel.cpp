@@ -864,7 +864,7 @@ void QQmlDelegateModelPrivate::releaseIncubator(QQDMIncubationTask *incubationTa
 
 void QQmlDelegateModelPrivate::removeCacheItem(QQmlDelegateModelItem *cacheItem)
 {
-    int cidx = m_cache.indexOf(cacheItem);
+    int cidx = m_cache.lastIndexOf(cacheItem);
     if (cidx >= 0) {
         m_compositor.clearFlags(Compositor::Cache, cidx, 1, Compositor::CacheFlag);
         m_cache.removeAt(cidx);
@@ -988,7 +988,7 @@ QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, QQ
             if (QQmlAdaptorModelProxyInterface *proxy
                     = qobject_cast<QQmlAdaptorModelProxyInterface *>(cacheItem)) {
                 ctxt = new QQmlContextData;
-                ctxt->setParent(cacheItem->contextData);
+                ctxt->setParent(cacheItem->contextData, /*stronglyReferencedByParent*/true);
                 ctxt->contextObject = proxy->proxiedObject();
             }
         }
@@ -1019,11 +1019,11 @@ QObject *QQmlDelegateModelPrivate::object(Compositor::Group group, int index, QQ
 
 /*
   If asynchronous is true or the component is being loaded asynchronously due
-  to an ancestor being loaded asynchronously, item() may return 0.  In this
-  case createdItem() will be emitted when the item is available.  The item
-  at this stage does not have any references, so item() must be called again
-  to ensure a reference is held.  Any call to item() which returns a valid item
-  must be matched by a call to release() in order to destroy the item.
+  to an ancestor being loaded asynchronously, object() may return 0.  In this
+  case createdItem() will be emitted when the object is available.  The object
+  at this stage does not have any references, so object() must be called again
+  to ensure a reference is held.  Any call to object() which returns a valid object
+  must be matched by a call to release() in order to destroy the object.
 */
 QObject *QQmlDelegateModel::object(int index, QQmlIncubator::IncubationMode incubationMode)
 {

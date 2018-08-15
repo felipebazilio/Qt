@@ -351,7 +351,7 @@ void QHeaderView::setModel(QAbstractItemModel *model)
     if (model == this->model())
         return;
     Q_D(QHeaderView);
-    d->persistentHiddenSections.clear();
+    d->layoutChangePersistentSections.clear();
     if (d->model && d->model != QAbstractItemModelPrivate::staticEmptyModel()) {
     if (d->orientation == Qt::Horizontal) {
         QObject::disconnect(d->model, SIGNAL(columnsInserted(QModelIndex,int,int)),
@@ -2072,14 +2072,38 @@ void QHeaderViewPrivate::_q_layoutAboutToBeChanged()
         || model->columnCount(root) == 0)
         return;
 
-    if (hiddenSectionSize.count() == 0)
-        return;
+    layoutChangePersistentSections.clear();
+    layoutChangePersistentSections.reserve(std::min(10, sectionItems.count()));
+    // after layoutChanged another section can be last stretched section
+    if (stretchLastSection && lastSectionLogicalIdx >= 0 && lastSectionLogicalIdx < sectionItems.count()) {
+        const int visual = visualIndex(lastSectionLogicalIdx);
+        if (visual >= 0 && visual < sectionItems.size()) {
+            auto &itemRef = sectionItems[visual];
+            if (itemRef.size != lastSectionSize) {
+                length += lastSectionSize - itemRef.size;
+                itemRef.size = lastSectionSize;
+            }
+        }
+    }
+    for (int i = 0; i < sectionItems.size(); ++i) {
+        auto s = sectionItems.at(i);
+        // only add if the section is not default and not visually moved
+        if (s.size == defaultSectionSize && !s.isHidden && s.resizeMode == globalResizeMode)
+            continue;
 
-    for (int i = 0; i < sectionItems.count(); ++i)
-        if (isVisualIndexHidden(i)) // ### note that we are using column or row 0
-            persistentHiddenSections.append(orientation == Qt::Horizontal
-                                            ? model->index(0, logicalIndex(i), root)
-                                            : model->index(logicalIndex(i), 0, root));
+        const int logical = logicalIndex(i);
+        if (s.isHidden)
+            s.size = hiddenSectionSize.value(logical);
+
+        // ### note that we are using column or row 0
+        layoutChangePersistentSections.append({orientation == Qt::Horizontal
+                                                  ? model->index(0, logical, root)
+                                                  : model->index(logical, 0, root),
+                                              s});
+
+        if (layoutChangePersistentSections.size() > 1000)
+            break;
+    }
 }
 
 void QHeaderViewPrivate::_q_layoutChanged()
@@ -2087,24 +2111,80 @@ void QHeaderViewPrivate::_q_layoutChanged()
     Q_Q(QHeaderView);
     viewport->update();
 
-    const auto hiddenSections = persistentHiddenSections;
-    persistentHiddenSections.clear();
+    const auto oldPersistentSections = layoutChangePersistentSections;
+    layoutChangePersistentSections.clear();
 
-    clear();
-    q->initializeSections();
-    invalidateCachedSizeHint();
-
-    if (modelIsEmpty()) {
+    const int newCount = modelSectionCount();
+    const int oldCount = sectionItems.size();
+    if (newCount == 0) {
+        clear();
+        if (oldCount != 0)
+            emit q->sectionCountChanged(oldCount, 0);
         return;
     }
 
-    for (const auto &index : hiddenSections) {
-        if (index.isValid()) {
-            const int logical = (orientation == Qt::Horizontal
-                                 ? index.column()
-                                 : index.row());
-            q->setSectionHidden(logical, true);
+    bool hasPersistantIndexes = false;
+    for (const auto &item : oldPersistentSections) {
+        if (item.index.isValid()) {
+            hasPersistantIndexes = true;
+            break;
         }
+    }
+
+    // Though far from perfect we here try to retain earlier/existing behavior
+    // ### See QHeaderViewPrivate::_q_layoutAboutToBeChanged()
+    // When we don't have valid hasPersistantIndexes it can be due to
+    // - all sections are default sections
+    // - the row/column 0 which is used for persistent indexes is gone
+    // - all non-default sections were removed
+    // case one is trivial, in case two we assume nothing else changed (it's the best
+    // guess we can do - everything else can not be handled correctly for now)
+    // case three can not be handled correctly with layoutChanged - removeSections
+    // should be used instead for this
+    if (!hasPersistantIndexes) {
+        if (oldCount != newCount)
+            q->initializeSections();
+        return;
+    }
+
+    // adjust section size
+    if (newCount != oldCount) {
+        const int min = qBound(0, oldCount, newCount - 1);
+        q->initializeSections(min, newCount - 1);
+    }
+    // reset sections
+    sectionItems.fill(SectionItem(defaultSectionSize, globalResizeMode), newCount);
+
+    // all hidden sections are in oldPersistentSections
+    hiddenSectionSize.clear();
+
+    for (const auto &item : oldPersistentSections) {
+        const auto &index = item.index;
+        if (!index.isValid())
+            continue;
+
+        const int newLogicalIndex = (orientation == Qt::Horizontal
+                                     ? index.column()
+                                     : index.row());
+        // the new visualIndices are already adjusted / reset by initializeSections()
+        const int newVisualIndex = visualIndex(newLogicalIndex);
+        auto &newSection = sectionItems[newVisualIndex];
+        newSection = item.section;
+
+        if (newSection.isHidden) {
+            // otherwise setSectionHidden will return without doing anything
+            newSection.isHidden = false;
+            q->setSectionHidden(newLogicalIndex, true);
+        }
+    }
+
+    recalcSectionStartPos();
+    length = headerLength();
+
+    if (stretchLastSection) {
+        // force rebuild of stretched section later on
+        lastSectionLogicalIdx = -1;
+        maybeRestorePrevLastSectionAndStretchLast();
     }
 }
 
