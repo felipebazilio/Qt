@@ -8,24 +8,22 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/macros.h"
-#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/web_ui.h"
 #include "ipc/ipc_listener.h"
 
 namespace content {
 class RenderFrameHost;
-class RenderViewHost;
-class WebContentsImpl;
 
 class CONTENT_EXPORT WebUIImpl : public WebUI,
                                  public IPC::Listener,
                                  public base::SupportsWeakPtr<WebUIImpl> {
  public:
-  WebUIImpl(WebContentsImpl* contents, const std::string& frame_name);
+  WebUIImpl(WebContents* contents, const std::string& frame_name);
   ~WebUIImpl() override;
 
   // Called when a RenderFrame is created for a WebUI (reload after a renderer
@@ -50,7 +48,7 @@ class CONTENT_EXPORT WebUIImpl : public WebUI,
   int GetBindings() const override;
   void SetBindings(int bindings) override;
   bool HasRenderFrame() override;
-  void AddMessageHandler(WebUIMessageHandler* handler) override;
+  void AddMessageHandler(std::unique_ptr<WebUIMessageHandler> handler) override;
   typedef base::Callback<void(const base::ListValue*)> MessageCallback;
   void RegisterMessageCallback(const std::string& message,
                                const MessageCallback& callback) override;
@@ -76,7 +74,8 @@ class CONTENT_EXPORT WebUIImpl : public WebUI,
   void CallJavascriptFunctionUnsafe(
       const std::string& function_name,
       const std::vector<const base::Value*>& args) override;
-  ScopedVector<WebUIMessageHandler>* GetHandlersForTesting() override;
+  std::vector<std::unique_ptr<WebUIMessageHandler>>* GetHandlersForTesting()
+      override;
 
   // IPC::Listener implementation:
   bool OnMessageReceived(const IPC::Message& message) override;
@@ -97,11 +96,6 @@ class CONTENT_EXPORT WebUIImpl : public WebUI,
   // frame of the specified name exists in the page.
   RenderFrameHost* TargetFrame();
 
-  // A helper function for TargetFrame; adds a frame to the specified set if its
-  // name matches |frame_name_|.
-  void AddToSetIfFrameNameMatches(std::set<RenderFrameHost*>* frame_set,
-                                  RenderFrameHost* host);
-
   // Called internally and by the owned MainFrameNavigationObserver.
   void DisallowJavascriptOnAllHandlers();
 
@@ -116,10 +110,10 @@ class CONTENT_EXPORT WebUIImpl : public WebUI,
                   // this page.
 
   // The WebUIMessageHandlers we own.
-  ScopedVector<WebUIMessageHandler> handlers_;
+  std::vector<std::unique_ptr<WebUIMessageHandler>> handlers_;
 
-  // Non-owning pointer to the WebContentsImpl this WebUI is associated with.
-  WebContentsImpl* web_contents_;
+  // Non-owning pointer to the WebContents this WebUI is associated with.
+  WebContents* web_contents_;
 
   // Notifies this WebUI about notifications in the main frame.
   std::unique_ptr<MainFrameNavigationObserver> web_contents_observer_;

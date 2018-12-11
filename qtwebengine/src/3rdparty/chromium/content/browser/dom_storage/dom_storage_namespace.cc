@@ -70,12 +70,12 @@ DOMStorageArea* DOMStorageNamespace::GetOpenStorageArea(const GURL& origin) {
   return NULL;
 }
 
-scoped_refptr<DOMStorageNamespace> DOMStorageNamespace::Clone(
+DOMStorageNamespace* DOMStorageNamespace::Clone(
     int64_t clone_namespace_id,
     const std::string& clone_persistent_namespace_id) {
   DCHECK_NE(kLocalStorageNamespaceId, namespace_id_);
   DCHECK_NE(kLocalStorageNamespaceId, clone_namespace_id);
-  scoped_refptr<DOMStorageNamespace> clone = new DOMStorageNamespace(
+  DOMStorageNamespace* clone = new DOMStorageNamespace(
       clone_namespace_id, clone_persistent_namespace_id,
       session_storage_database_.get(), task_runner_.get());
   AreaMap::const_iterator it = areas_.begin();
@@ -118,8 +118,8 @@ void DOMStorageNamespace::DeleteSessionStorageOrigin(const GURL& origin) {
 }
 
 void DOMStorageNamespace::PurgeMemory(bool aggressively) {
-  if (directory_.empty())
-    return;  // We can't purge w/o backing on disk.
+  if (namespace_id_ == kLocalStorageNamespaceId && directory_.empty())
+    return;  // We can't purge local storage w/o backing on disk.
 
   AreaMap::iterator it = areas_.begin();
   while (it != areas_.end()) {

@@ -84,7 +84,7 @@ public:
 
     int m_endian;
     int m_bits;
-    qelfoff_t m_stringTableFileOffset;
+    int m_stringTableFileOffset;
 
     template <typename T>
     T read(const char *s)

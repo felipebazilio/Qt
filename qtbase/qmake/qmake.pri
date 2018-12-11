@@ -134,8 +134,7 @@ bootstrap { #Qt code
     unix {
         SOURCES += qfilesystemengine_unix.cpp qfilesystemiterator_unix.cpp qfsfileengine_unix.cpp
         mac {
-          SOURCES += qcore_mac.cpp qsettings_mac.cpp
-          OBJECTIVE_SOURCES += qcore_mac_objc.mm qlocale_mac.mm
+          SOURCES += qcore_mac.cpp qsettings_mac.cpp qcore_mac_objc.mm qlocale_mac.mm
           LIBS += -framework ApplicationServices -framework CoreServices -framework Foundation
         } else {
           SOURCES += qlocale_unix.cpp
@@ -143,8 +142,8 @@ bootstrap { #Qt code
     } else:win32 {
         SOURCES += qfilesystemengine_win.cpp qfsfileengine_win.cpp qfilesystemiterator_win.cpp qsettings_win.cpp \
             qsystemlibrary.cpp qlocale_win.cpp registry.cpp
-        win32-msvc*:LIBS += ole32.lib advapi32.lib
-        mingw:LIBS += -lole32 -luuid -ladvapi32 -lkernel32
+        win32-msvc*:LIBS += ole32.lib advapi32.lib netapi32.lib
+        mingw:LIBS += -lole32 -luuid -ladvapi32 -lkernel32 -lnetapi32
     }
 
     qnx {

@@ -72,7 +72,7 @@ defineReplace(qtConfFunc_licenseCheck) {
         hasOpenSource = true
     else: \
         hasOpenSource = false
-    exists($$QT_SOURCE_TREE/LICENSE.QT-LICENSE-AGREEMENT-4.0): \
+    exists($$QT_SOURCE_TREE/LICENSE.PREVIEW.COMMERCIAL)|exists($$QT_SOURCE_TREE/bin/licheck*): \
         hasCommercial = true
     else: \
         hasCommercial = false
@@ -128,18 +128,14 @@ defineReplace(qtConfFunc_licenseCheck) {
             qtConfFatalError("This is the Qt Open Source Edition." \
                              "Cannot proceed with -commercial.")
 
-        !exists($$QT_SOURCE_TREE/.release-timestamp) {
-            #  Build from git
-
+        exists($$QT_SOURCE_TREE/LICENSE.PREVIEW.COMMERCIAL) {
             logn()
-            logn("This is the Qt Commercial Edition.")
+            logn("This is the Qt Technology Preview Edition.")
 
-            EditionString = "Commercial"
-            config.input.qt_edition = Commercial
+            EditionString = "Technology Preview"
+            config.input.qt_edition = Preview
             export(config.input.qt_edition)
         } else {
-            # Build from a released source package
-
             equals(QMAKE_HOST.os, Linux) {
                 !equals(QMAKE_HOST.arch, x86_64): \
                     Licheck = licheck32
@@ -198,7 +194,7 @@ defineReplace(qtConfFunc_licenseCheck) {
             affix = either
         }
     } else {
-        theLicense = $$cat($$QT_SOURCE_TREE/LICENSE.QT-LICENSE-AGREEMENT-4.0, lines)
+        theLicense = $$cat($$QT_SOURCE_TREE/LICENSE.PREVIEW.COMMERCIAL, lines)
         theLicense = $$first(theLicense)
         showWhat = "Type '?' to view the $${theLicense}."
     }
@@ -225,7 +221,7 @@ defineReplace(qtConfFunc_licenseCheck) {
             } else: equals(val, n)|equals(val, no) {
                 return(false)
             } else: equals(commercial, yes):equals(val, ?) {
-                licenseFile = $$QT_SOURCE_TREE/LICENSE.QT-LICENSE-AGREEMENT-4.0
+                licenseFile = $$QT_SOURCE_TREE/LICENSE.PREVIEW.COMMERCIAL
             } else: equals(commercial, no):equals(val, l) {
                 licenseFile = $$QT_SOURCE_TREE/LICENSE.LGPL3
             } else: equals(commercial, no):equals(val, g):$$gpl2Ok {
@@ -681,14 +677,10 @@ defineReplace(printHostPaths) {
 
 defineTest(qtConfOutput_preparePaths) {
     isEmpty(config.input.prefix) {
-        $$qtConfEvaluate("features.developer-build") {
+        $$qtConfEvaluate("features.developer-build"): \
             config.input.prefix = $$QT_BUILD_TREE  # In Development, we use sandboxed builds by default
-        } else {
-            win32: \
-                config.input.prefix = C:/Qt/Qt-$$[QT_VERSION]
-            else: \
-                config.input.prefix = /usr/local/Qt-$$[QT_VERSION]
-        }
+        else: \
+            config.input.prefix = /usr/local/Qt-$$[QT_VERSION]
         have_prefix = false
     } else {
         config.input.prefix = $$absolute_path($$config.input.prefix, $$OUT_PWD)
@@ -881,6 +873,19 @@ defineTest(qtConfOutput_shared) {
 
     # export this here, so later tests can use it
     CONFIG += shared
+    export(CONFIG)
+}
+
+defineTest(qtConfOutput_sanitizer) {
+    !$${2}: return()
+
+    # Export this here, so that WebEngine can access it at configure time.
+    CONFIG += sanitizer
+    $$qtConfEvaluate("features.sanitize_address"): CONFIG += sanitize_address
+    $$qtConfEvaluate("features.sanitize_thread"): CONFIG += sanitize_thread
+    $$qtConfEvaluate("features.sanitize_memory"): CONFIG += sanitize_memory
+    $$qtConfEvaluate("features.sanitize_undefined"): CONFIG += sanitize_undefined
+
     export(CONFIG)
 }
 

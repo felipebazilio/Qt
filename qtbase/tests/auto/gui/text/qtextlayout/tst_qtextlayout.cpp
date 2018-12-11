@@ -137,7 +137,6 @@ private slots:
     void nbspWithFormat();
     void noModificationOfInputString();
     void superscriptCrash_qtbug53911();
-    void showLineAndParagraphSeparatorsCrash();
 
 private:
     QFont testFont;
@@ -1313,7 +1312,7 @@ void tst_QTextLayout::testDefaultTabs()
     QCOMPARE(line.cursorToX(31), 480.);
 
     QTextOption option = layout.textOption();
-    option.setTabStop(90);
+    option.setTabStopDistance(90);
     layout.setTextOption(option);
     layout.beginLayout();
     line = layout.createLine();
@@ -1352,7 +1351,7 @@ void tst_QTextLayout::testTabs()
 
     layout.setCacheEnabled(true);
     QTextOption option = layout.textOption();
-    option.setTabStop(150);
+    option.setTabStopDistance(150);
     layout.setTextOption(option);
 
     layout.beginLayout();
@@ -2197,23 +2196,6 @@ void tst_QTextLayout::noModificationOfInputString()
 
         QCOMPARE(s.size(), 1);
         QCOMPARE(s.at(0), QChar(QChar::LineSeparator));
-    }
-}
-
-void tst_QTextLayout::showLineAndParagraphSeparatorsCrash()
-{
-    QString s = QString(100000, QChar('a')) + QChar(QChar::LineSeparator);
-    {
-        QTextLayout layout;
-        layout.setText(s);
-
-        QTextOption option;
-        option.setFlags(QTextOption::ShowLineAndParagraphSeparators);
-        layout.setTextOption(option);
-
-        layout.beginLayout();
-        layout.createLine();
-        layout.endLayout();
     }
 }
 

@@ -388,7 +388,7 @@ static void qt_palette_from_color(QPalette &pal, const QColor &button)
 
     \warning Some styles do not use the palette for all drawing, for
     instance, if they make use of native theme engines. This is the
-    case for both the Windows XP, Windows Vista, and the \macos
+    case for both the Windows Vista and the \macos
     styles.
 
     \sa QApplication::setPalette(), QWidget::setPalette(), QColor
@@ -1117,14 +1117,14 @@ void QPalette::setColorGroup(ColorGroup cg, const QBrush &foreground, const QBru
 
 Q_GUI_EXPORT QPalette qt_fusionPalette()
 {
-    QColor backGround(239, 235, 231);
+    QColor backGround(239, 239, 239);
     QColor light = backGround.lighter(150);
     QColor mid(backGround.darker(130));
     QColor midLight = mid.lighter(110);
     QColor base = Qt::white;
     QColor disabledBase(backGround);
     QColor dark = backGround.darker(150);
-    QColor darkDisabled = QColor(209, 200, 191).darker(110);
+    QColor darkDisabled = QColor(209, 209, 209).darker(110);
     QColor text = Qt::black;
     QColor hightlightedText = Qt::white;
     QColor disabledText = QColor(190, 190, 190);
@@ -1147,7 +1147,7 @@ Q_GUI_EXPORT QPalette qt_fusionPalette()
 
     fusionPalette.setBrush(QPalette::Active, QPalette::Highlight, QColor(48, 140, 198));
     fusionPalette.setBrush(QPalette::Inactive, QPalette::Highlight, QColor(48, 140, 198));
-    fusionPalette.setBrush(QPalette::Disabled, QPalette::Highlight, QColor(145, 141, 126));
+    fusionPalette.setBrush(QPalette::Disabled, QPalette::Highlight, QColor(145, 145, 145));
     return fusionPalette;
 }
 

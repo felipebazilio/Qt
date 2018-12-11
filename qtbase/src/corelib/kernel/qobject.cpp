@@ -2340,7 +2340,7 @@ static void err_info_about_objects(const char * func,
     a thread different from this object's thread. Do not use this
     function in this type of scenario.
 
-    \sa senderSignalIndex(), QSignalMapper
+    \sa senderSignalIndex()
 */
 
 QObject *QObject::sender() const
@@ -3894,8 +3894,7 @@ bool QObject::setProperty(const char *name, const QVariant &value)
                 d->extraData->propertyNames.append(name);
                 d->extraData->propertyValues.append(value);
             } else {
-                if (value.userType() == d->extraData->propertyValues.at(idx).userType()
-                        && value == d->extraData->propertyValues.at(idx))
+                if (value == d->extraData->propertyValues.at(idx))
                     return false;
                 d->extraData->propertyValues[idx] = value;
             }

@@ -3,8 +3,6 @@
 # found in the LICENSE file.
 
 import argparse
-import doctest
-import itertools
 import os
 import subprocess
 import sys
@@ -12,37 +10,22 @@ import sys
 # This script prints information about the build system, the operating
 # system and the iOS or Mac SDK (depending on the platform "iphonesimulator",
 # "iphoneos" or "macosx" generally).
-
-def SplitVersion(version):
-  """Splits the Xcode version to 3 values.
-
-  >>> list(SplitVersion('8.2.1.1'))
-  ['8', '2', '1']
-  >>> list(SplitVersion('9.3'))
-  ['9', '3', '0']
-  >>> list(SplitVersion('10.0'))
-  ['10', '0', '0']
-  """
-  version = version.split('.')
-  return itertools.islice(itertools.chain(version, itertools.repeat('0')), 0, 3)
+#
+# In the GYP build, this is done inside GYP itself based on the SDKROOT
+# variable.
 
 def FormatVersion(version):
-  """Converts Xcode version to a format required for DTXcode in Info.plist
+  """Converts Xcode version to a format required for Info.plist."""
+  version = version.replace('.', '')
+  version = version + '0' * (3 - len(version))
+  return version.zfill(4)
 
-  >>> FormatVersion('8.2.1')
-  '0821'
-  >>> FormatVersion('9.3')
-  '0930'
-  >>> FormatVersion('10.0')
-  '1000'
-  """
-  major, minor, patch = SplitVersion(version)
-  return ('%2s%s%s' % (major, minor, patch)).replace(' ', '0')
 
 def FillXcodeVersion(settings):
   """Fills the Xcode version and build number into |settings|."""
   lines = subprocess.check_output(['xcodebuild', '-version']).splitlines()
   settings['xcode_version'] = FormatVersion(lines[0].split()[-1])
+  settings['xcode_version_int'] = int(settings['xcode_version'], 10)
   settings['xcode_build'] = lines[-1].split()[-1]
 
 
@@ -70,8 +53,6 @@ def FillSDKPathAndVersion(settings, platform, xcode_version):
 
 
 if __name__ == '__main__':
-  doctest.testmod()
-
   parser = argparse.ArgumentParser()
   parser.add_argument("--developer_dir", required=False)
   args, unknownargs = parser.parse_known_args()
@@ -90,4 +71,7 @@ if __name__ == '__main__':
   FillSDKPathAndVersion(settings, unknownargs[0], settings['xcode_version'])
 
   for key in sorted(settings):
-    print '%s="%s"' % (key, settings[key])
+    value = settings[key]
+    if isinstance(value, str):
+      value = '"%s"' % value
+    print '%s=%s' % (key, value)

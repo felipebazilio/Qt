@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "webrtc/base/checks.h"
+#include "webrtc/rtc_base/checks.h"
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
 #include "webrtc/modules/audio_coding/codecs/isac/main/source/bandwidth_estimator.h"
 #include "webrtc/modules/audio_coding/codecs/isac/main/source/codec.h"
@@ -1266,10 +1266,8 @@ static int Decode(ISACStruct* ISAC_main_inst,
 
         /* It might be less due to garbage. */
         if ((numDecodedBytesUB != lenNextStream) &&
-            (numDecodedBytesLB + 1 + numDecodedBytesUB >= lenEncodedBytes ||
-             numDecodedBytesUB !=
-                 (lenNextStream -
-                  encoded[numDecodedBytesLB + 1 + numDecodedBytesUB]))) {
+            (numDecodedBytesUB != (lenNextStream -
+                encoded[numDecodedBytesLB + 1 + numDecodedBytesUB]))) {
           instISAC->errorCode = ISAC_LENGTH_MISMATCH;
           return -1;
         }

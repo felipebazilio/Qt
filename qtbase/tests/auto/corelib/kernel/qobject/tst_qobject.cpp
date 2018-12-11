@@ -140,6 +140,7 @@ private slots:
     void connectFunctorWithContext();
     void connectFunctorWithContextUnique();
     void connectFunctorDeadlock();
+    void connectFunctorMoveOnly();
     void connectStaticSlotWithObject();
     void disconnectDoesNotLeakFunctor();
     void contextDoesNotLeakFunctor();
@@ -2362,8 +2363,8 @@ void tst_QObject::testUserData()
 
     // Randomize the table a bit
     for (int i=0; i<100; ++i) {
-        int p1 = rand() % USER_DATA_COUNT;
-        int p2 = rand() % USER_DATA_COUNT;
+        int p1 = QRandomGenerator::global()->bounded(USER_DATA_COUNT);
+        int p2 = QRandomGenerator::global()->bounded(USER_DATA_COUNT);
 
         int tmp = user_data_ids[p1];
         user_data_ids[p1] = user_data_ids[p2];
@@ -2975,7 +2976,6 @@ void tst_QObject::dynamicProperties()
 
     QVERIFY(obj.dynamicPropertyNames().isEmpty());
 
-    // set a non-dynamic property
     QVERIFY(obj.setProperty("number", 42));
     QVERIFY(obj.changedDynamicProperties.isEmpty());
     QCOMPARE(obj.property("number").toInt(), 42);
@@ -2983,30 +2983,19 @@ void tst_QObject::dynamicProperties()
     QVERIFY(!obj.setProperty("number", "invalid string"));
     QVERIFY(obj.changedDynamicProperties.isEmpty());
 
-    // set a dynamic property
     QVERIFY(!obj.setProperty("myuserproperty", "Hello"));
     QCOMPARE(obj.changedDynamicProperties.count(), 1);
     QCOMPARE(obj.changedDynamicProperties.first(), QByteArray("myuserproperty"));
     //check if there is no redundant DynamicPropertyChange events
     QVERIFY(!obj.setProperty("myuserproperty", "Hello"));
     QCOMPARE(obj.changedDynamicProperties.count(), 1);
+    obj.changedDynamicProperties.clear();
 
-    QCOMPARE(obj.property("myuserproperty").type(), QVariant::String);
     QCOMPARE(obj.property("myuserproperty").toString(), QString("Hello"));
 
     QCOMPARE(obj.dynamicPropertyNames().count(), 1);
     QCOMPARE(obj.dynamicPropertyNames().first(), QByteArray("myuserproperty"));
 
-    // change type of the dynamic property
-    obj.changedDynamicProperties.clear();
-    QVERIFY(!obj.setProperty("myuserproperty", QByteArray("Hello")));
-    QCOMPARE(obj.changedDynamicProperties.count(), 1);
-    QCOMPARE(obj.changedDynamicProperties.first(), QByteArray("myuserproperty"));
-    QCOMPARE(obj.property("myuserproperty").type(), QVariant::ByteArray);
-    QCOMPARE(obj.property("myuserproperty").toByteArray(), QByteArray("Hello"));
-
-    // unset the property
-    obj.changedDynamicProperties.clear();
     QVERIFY(!obj.setProperty("myuserproperty", QVariant()));
 
     QCOMPARE(obj.changedDynamicProperties.count(), 1);
@@ -6248,6 +6237,47 @@ void tst_QObject::connectFunctorDeadlock()
     MyFunctor functor(&sender);
     QObject::connect(&sender, &SenderObject::signal1, functor);
     sender.emitSignal1();
+}
+
+void tst_QObject::connectFunctorMoveOnly()
+{
+    struct MoveOnlyFunctor {
+        Q_DISABLE_COPY(MoveOnlyFunctor)
+        MoveOnlyFunctor(int *status) : status(status) {}
+        MoveOnlyFunctor(MoveOnlyFunctor &&o) : status(o.status) { o.status = nullptr; };
+        void operator()(int i) { *status = i; }
+        void operator()() { *status = -8; }
+        int *status;
+    };
+
+    int status = 1;
+    SenderObject obj;
+    QEventLoop e;
+
+    connect(&obj, &SenderObject::signal1, MoveOnlyFunctor(&status));
+    QCOMPARE(status, 1);
+    obj.signal1();
+    QCOMPARE(status, -8);
+
+    connect(&obj, &SenderObject::signal7, MoveOnlyFunctor(&status));
+    QCOMPARE(status, -8);
+    obj.signal7(7888, "Hello");
+    QCOMPARE(status, 7888);
+
+    // With a context
+    status = 1;
+    connect(&obj, &SenderObject::signal2, this, MoveOnlyFunctor(&status));
+    QCOMPARE(status, 1);
+    obj.signal2();
+    QCOMPARE(status, -8);
+
+    // QueuedConnection
+    status = 1;
+    connect(&obj, &SenderObject::signal3, this, MoveOnlyFunctor(&status), Qt::QueuedConnection);
+    obj.signal3();
+    QCOMPARE(status, 1);
+    QCoreApplication::processEvents();
+    QCOMPARE(status, -8);
 }
 
 static int s_static_slot_checker = 1;

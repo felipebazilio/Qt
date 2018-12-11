@@ -175,7 +175,6 @@ void PropertyEditor::setupStringProperty(QtVariantProperty *property, bool isMai
 
 void PropertyEditor::setupPaletteProperty(QtVariantProperty *property)
 {
-    QPalette value = qvariant_cast<QPalette>(property->value());
     QPalette superPalette = QPalette();
     QWidget *currentWidget = qobject_cast<QWidget *>(m_object);
     if (currentWidget) {
@@ -912,8 +911,6 @@ void PropertyEditor::setObject(QObject *object)
     m_object = object;
     m_propertyManager->setObject(object);
     QDesignerFormWindowInterface *formWindow = QDesignerFormWindowInterface::findFormWindow(m_object);
-    if (Q_UNLIKELY(formWindow == nullptr)) // QTBUG-68507, can happen in Morph Undo macros with buddies
-        return;
     FormWindowBase *fwb = qobject_cast<FormWindowBase *>(formWindow);
     m_treeFactory->setFormWindowBase(fwb);
     m_groupFactory->setFormWindowBase(fwb);

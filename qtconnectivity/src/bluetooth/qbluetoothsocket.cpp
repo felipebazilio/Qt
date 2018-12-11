@@ -81,6 +81,9 @@ Q_DECLARE_LOGGING_CATEGORY(QT_BT)
     \note QBluetoothSocket does not support synchronous read and write operations. Functions such
     as \l waitForReadyRead() and \l waitForBytesWritten() are not implemented. I/O operations should be
     performed using \l readyRead(), \l read() and \l write().
+
+    On iOS, this class cannot be used because the platform does not expose
+    an API which may permit access to QBluetoothSocket related features.
 */
 
 /*!
@@ -112,6 +115,8 @@ Q_DECLARE_LOGGING_CATEGORY(QT_BT)
                                     supported on this platform.
     \value OperationError           An operation was attempted while the socket was in a state
                                     that did not permit it.
+    \value RemoteHostClosedError    The remote host closed the connection. This value was
+                                    introduced by Qt 5.10.
 */
 
 /*!
@@ -340,13 +345,13 @@ void QBluetoothSocket::connectToService(const QBluetoothServiceInfo &service, Op
 #else
 #if defined(QT_WINRT_BLUETOOTH)
     // Report these problems early:
-    if (service.socketProtocol() != QBluetoothServiceInfo::RfcommProtocol) {
+    if (socketType() != QBluetoothServiceInfo::RfcommProtocol) {
         d->errorString = tr("Socket type not supported");
         setSocketError(QBluetoothSocket::UnsupportedProtocolError);
         return;
     }
 #endif // QT_WINRT_BLUETOOTH
-    if (service.socketProtocol() == QBluetoothServiceInfo::UnknownProtocol) {
+    if (socketType() == QBluetoothServiceInfo::UnknownProtocol) {
         qCWarning(QT_BT) << "QBluetoothSocket::connectToService cannot "
                             "connect with 'UnknownProtocol' type";
         d->errorString = tr("Socket type not supported");
@@ -854,11 +859,17 @@ QDebug operator<<(QDebug debug, QBluetoothSocket::SocketError error)
     case QBluetoothSocket::HostNotFoundError:
         debug << "QBluetoothSocket::HostNotFoundError";
         break;
+    case QBluetoothSocket::RemoteHostClosedError:
+        debug << "QBluetoothSocket::RemoteHostClosedError";
+        break;
     case QBluetoothSocket::ServiceNotFoundError:
         debug << "QBluetoothSocket::ServiceNotFoundError";
         break;
     case QBluetoothSocket::NetworkError:
         debug << "QBluetoothSocket::NetworkError";
+        break;
+    case QBluetoothSocket::UnsupportedProtocolError:
+        debug << "QBluetoothSocket::UnsupportedProtocolError";
         break;
     default:
         debug << "QBluetoothSocket::SocketError(" << (int)error << ")";

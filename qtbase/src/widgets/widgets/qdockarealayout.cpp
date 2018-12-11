@@ -45,6 +45,7 @@
 #endif
 #include "QtWidgets/qstyle.h"
 #include "QtWidgets/qdesktopwidget.h"
+#include <private/qdesktopwidget_p.h>
 #include "QtWidgets/qapplication.h"
 #include "QtCore/qvariant.h"
 #include "qdockarealayout_p.h"
@@ -1044,33 +1045,6 @@ QLayoutItem *QDockAreaLayoutInfo::plug(const QList<int> &path)
     Q_ASSERT(item.widgetItem != 0);
     Q_ASSERT(item.flags & QDockAreaLayoutItem::GapItem);
     item.flags &= ~QDockAreaLayoutItem::GapItem;
-
-    QRect result;
-
-#if QT_CONFIG(tabbar)
-    if (tabbed) {
-    } else
-#endif
-    {
-        int prev = this->prev(index);
-        int next = this->next(index);
-
-        if (prev != -1 && !(item_list.at(prev).flags & QDockAreaLayoutItem::GapItem)) {
-            item.pos += *sep;
-            item.size -= *sep;
-        }
-        if (next != -1 && !(item_list.at(next).flags & QDockAreaLayoutItem::GapItem))
-            item.size -= *sep;
-
-        QPoint pos;
-        rpick(o, pos) = item.pos;
-        rperp(o, pos) = perp(o, rect.topLeft());
-        QSize s;
-        rpick(o, s) = item.size;
-        rperp(o, s) = perp(o, rect.size());
-        result = QRect(pos, s);
-    }
-
     return item.widgetItem;
 }
 
@@ -1323,29 +1297,46 @@ QDockAreaLayoutInfo *QDockAreaLayoutInfo::info(const QList<int> &path)
     return item_list[index].subinfo->info(path.mid(1));
 }
 
-QRect QDockAreaLayoutInfo::itemRect(int index) const
+QRect QDockAreaLayoutInfo::itemRect(int index, bool isGap) const
 {
     const QDockAreaLayoutItem &item = item_list.at(index);
 
     if (item.skip())
         return QRect();
 
+    if (isGap && !(item.flags & QDockAreaLayoutItem::GapItem))
+        return QRect();
+
     QRect result;
 
 #if QT_CONFIG(tabbar)
     if (tabbed) {
-        if (tabId(item) == currentTabId())
+        if (isGap || tabId(item) == currentTabId())
             result = tabContentRect();
     } else
 #endif
     {
-        QPoint pos;
-        rpick(o, pos) = item.pos;
-        rperp(o, pos) = perp(o, rect.topLeft());
+        int pos = item.pos;
+        int size = item.size;
+
+        if (isGap) {
+            int prev = this->prev(index);
+            int next = this->next(index);
+            if (prev != -1 && !(item_list.at(prev).flags & QDockAreaLayoutItem::GapItem)) {
+                pos += *sep;
+                size -= *sep;
+            }
+            if (next != -1 && !(item_list.at(next).flags & QDockAreaLayoutItem::GapItem))
+                size -= *sep;
+        }
+
+        QPoint p;
+        rpick(o, p) = pos;
+        rperp(o, p) = perp(o, rect.topLeft());
         QSize s;
-        rpick(o, s) = item.size;
+        rpick(o, s) = size;
         rperp(o, s) = perp(o, rect.size());
-        result = QRect(pos, s);
+        result = QRect(p, s);
     }
 
     return result;
@@ -2426,20 +2417,21 @@ QList<int> QDockAreaLayout::indexOf(QWidget *dockWidget) const
     return QList<int>();
 }
 
-QList<int> QDockAreaLayout::gapIndex(const QPoint &pos) const
+QList<int> QDockAreaLayout::gapIndex(const QPoint &pos, bool disallowTabs) const
 {
     QMainWindow::DockOptions opts = mainWindow->dockOptions();
     bool nestingEnabled = opts & QMainWindow::AllowNestedDocks;
     QDockAreaLayoutInfo::TabMode tabMode = QDockAreaLayoutInfo::NoTabs;
 #if QT_CONFIG(tabbar)
-    if (opts & QMainWindow::AllowTabbedDocks
-        || opts & QMainWindow::VerticalTabs)
-        tabMode = QDockAreaLayoutInfo::AllowTabs;
-    if (opts & QMainWindow::ForceTabbedDocks)
-        tabMode = QDockAreaLayoutInfo::ForceTabs;
+    if (!disallowTabs) {
+        if (opts & QMainWindow::AllowTabbedDocks || opts & QMainWindow::VerticalTabs)
+            tabMode = QDockAreaLayoutInfo::AllowTabs;
+        if (opts & QMainWindow::ForceTabbedDocks)
+            tabMode = QDockAreaLayoutInfo::ForceTabs;
 
-    if (tabMode == QDockAreaLayoutInfo::ForceTabs)
-        nestingEnabled = false;
+        if (tabMode == QDockAreaLayoutInfo::ForceTabs)
+            nestingEnabled = false;
+    }
 #endif
 
 
@@ -3052,11 +3044,10 @@ QSize QDockAreaLayout::minimumSize() const
 QRect QDockAreaLayout::constrainedRect(QRect rect, QWidget* widget)
 {
     QRect desktop;
-    QDesktopWidget *desktopW = QApplication::desktop();
-    if (desktopW->isVirtualDesktop())
-        desktop = desktopW->screenGeometry(rect.topLeft());
+    if (QDesktopWidgetPrivate::isVirtualDesktop())
+        desktop = QDesktopWidgetPrivate::screenGeometry(rect.topLeft());
     else
-        desktop = desktopW->screenGeometry(widget);
+        desktop = QDesktopWidgetPrivate::screenGeometry(widget);
 
     if (desktop.isValid()) {
         rect.setWidth(qMin(rect.width(), desktop.width()));
@@ -3311,6 +3302,19 @@ int QDockAreaLayout::separatorMove(const QList<int> &separator, const QPoint &or
     return delta;
 }
 
+int QDockAreaLayoutInfo::separatorMove(const QList<int> &separator, const QPoint &origin,
+                                       const QPoint &dest)
+{
+    int delta = 0;
+    int index = separator.last();
+    QDockAreaLayoutInfo *info = this->info(separator);
+    delta = pick(info->o, dest - origin);
+    if (delta != 0)
+        delta = info->separatorMove(index, delta);
+    info->apply(false);
+    return delta;
+}
+
 #if QT_CONFIG(tabbar)
 // Sets the correct positions for the separator widgets
 // Allocates new sepearator widgets with getSeparatorWidget
@@ -3420,47 +3424,10 @@ QRect QDockAreaLayout::gapRect(const QList<int> &path) const
     const QDockAreaLayoutInfo *info = this->info(path);
     if (info == 0)
         return QRect();
-    const QList<QDockAreaLayoutItem> &item_list = info->item_list;
-    Qt::Orientation o = info->o;
     int index = path.last();
-    if (index < 0 || index >= item_list.count())
+    if (index < 0 || index >= info->item_list.count())
         return QRect();
-    const QDockAreaLayoutItem &item = item_list.at(index);
-    if (!(item.flags & QDockAreaLayoutItem::GapItem))
-        return QRect();
-
-    QRect result;
-
-#if QT_CONFIG(tabbar)
-    if (info->tabbed) {
-        result = info->tabContentRect();
-    } else
-#endif
-    {
-        int pos = item.pos;
-        int size = item.size;
-
-        int prev = info->prev(index);
-        int next = info->next(index);
-
-        if (prev != -1 && !(item_list.at(prev).flags & QDockAreaLayoutItem::GapItem)) {
-            pos += sep;
-            size -= sep;
-        }
-        if (next != -1 && !(item_list.at(next).flags & QDockAreaLayoutItem::GapItem))
-            size -= sep;
-
-        QPoint p;
-        rpick(o, p) = pos;
-        rperp(o, p) = perp(o, info->rect.topLeft());
-        QSize s;
-        rpick(o, s) = size;
-        rperp(o, s) = perp(o, info->rect.size());
-
-        result = QRect(p, s);
-    }
-
-    return result;
+    return info->itemRect(index, true);
 }
 
 void QDockAreaLayout::keepSize(QDockWidget *w)

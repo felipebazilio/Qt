@@ -147,8 +147,6 @@ class StrictIdHandler : public IdHandlerInterface {
     // Delete stub must run before CollectPendingFreeIds.
     (gl_impl->*delete_fn)(n, ids);
 
-    bool return_value = true;
-
     {
       base::AutoLock auto_lock(lock_);
 
@@ -159,28 +157,18 @@ class StrictIdHandler : public IdHandlerInterface {
       ShareGroupContextData::IdHandlerData* ctxt_data =
           gl_impl->share_group_context_data()->id_handler_data(id_namespace_);
 
-      GLuint max_valid_id = id_states_.size();
       for (GLsizei ii = 0; ii < n; ++ii) {
         GLuint id = ids[ii];
         if (id != 0) {
-          if (id > max_valid_id) {
-            // Caller will generate an error.
-            return_value = false;
-            continue;
-          }
           // Save freed Id for later.
-          if (id_states_[id - 1] != kIdInUse) {
-            DVLOG(1) << "Already freed id " << id;
-            return_value = false;
-            continue;
-          }
+          DCHECK(id_states_[id - 1] == kIdInUse);
           id_states_[id - 1] = kIdPendingFree;
           ctxt_data->freed_ids_.push_back(id);
         }
       }
     }
 
-    return return_value;
+    return true;
   }
 
   // Overridden from IdHandler.
@@ -364,16 +352,20 @@ ShareGroup::ShareGroup(bool bind_generates_resource, uint64_t tracing_guid)
     : bind_generates_resource_(bind_generates_resource),
       tracing_guid_(tracing_guid) {
   if (bind_generates_resource) {
-    for (int i = 0; i < id_namespaces::kNumIdNamespaces; ++i) {
-      if (i == id_namespaces::kProgramsAndShaders) {
+    for (int i = 0;
+         i < static_cast<int>(SharedIdNamespaces::kNumSharedIdNamespaces);
+         ++i) {
+      if (i == static_cast<int>(SharedIdNamespaces::kProgramsAndShaders)) {
         id_handlers_[i].reset(new NonReusedIdHandler());
       } else {
         id_handlers_[i].reset(new IdHandler());
       }
     }
   } else {
-    for (int i = 0; i < id_namespaces::kNumIdNamespaces; ++i) {
-      if (i == id_namespaces::kProgramsAndShaders) {
+    for (int i = 0;
+         i < static_cast<int>(SharedIdNamespaces::kNumSharedIdNamespaces);
+         ++i) {
+      if (i == static_cast<int>(SharedIdNamespaces::kProgramsAndShaders)) {
         id_handlers_[i].reset(new NonReusedIdHandler());
       } else {
         id_handlers_[i].reset(new StrictIdHandler(i));

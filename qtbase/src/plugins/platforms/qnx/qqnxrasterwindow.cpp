@@ -157,7 +157,7 @@ QQnxBuffer &QQnxRasterWindow::renderBuffer()
                                 "Failed to clear window buffer");
         }
 
-        Q_SCREEN_CHECKERROR(screen_flush_blits(screen()->nativeContext(), SCREEN_WAIT_IDLE),
+        Q_SCREEN_CHECKERROR(screen_flush_blits(screen()->nativeContext(), 0),
                             "Failed to flush blits");
 
         // Use the first available render buffer

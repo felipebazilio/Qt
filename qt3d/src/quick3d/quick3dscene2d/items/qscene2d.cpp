@@ -54,7 +54,6 @@ namespace Quick {
 
 /*!
     \class Qt3DRender::Quick::QScene2D
-    \inheaderfile Qt3DQuickScene2D/QScene2D
     \inmodule Qt3DScene2D
 
     \brief This class enables rendering qml into a texture, which then can be
@@ -74,7 +73,7 @@ namespace Quick {
 
 /*!
     \qmltype Scene2D
-    \inqmlmodule QtQuick.Scene2D
+    \inqmlmodule Qt3D.Scene2D
     \since 5.9
     \instantiates Qt3DRender::Quick::QScene2D
 
